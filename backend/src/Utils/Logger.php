@@ -3,7 +3,7 @@
 // LOGGER IMPLEMENTATION
 // ==============================================
 
-namespace Pandora\Utils;
+namespace Agtsdbx\Utils;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;

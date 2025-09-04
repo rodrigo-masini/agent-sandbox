@@ -3,7 +3,7 @@
 // CONFIG IMPLEMENTATION
 // ==============================================
 
-namespace Pandora\Utils;
+namespace Agtsdbx\Utils;
 
 class Config
 {
@@ -22,7 +22,7 @@ class Config
             'app' => [
                 'env' => $_ENV['APP_ENV'] ?? 'development',
                 'debug' => ($_ENV['APP_DEBUG'] ?? 'false') === 'true',
-                'name' => $_ENV['APP_NAME'] ?? 'Pandora',
+                'name' => $_ENV['APP_NAME'] ?? 'Agtsdbx',
                 'version' => $_ENV['APP_VERSION'] ?? '1.0.0'
             ],
             'workdir' => $_ENV['WORKDIR'] ?? '/app/WORKDIR',

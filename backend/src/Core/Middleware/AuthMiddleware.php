@@ -1,8 +1,8 @@
 <?php
 
-namespace Pandora\Core\Middleware;
+namespace Agtsdbx\Core\Middleware;
 
-use Pandora\Utils\Config;
+use Agtsdbx\Utils\Config;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 

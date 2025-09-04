@@ -3,10 +3,10 @@
 // DOCKER CONTROLLER
 // ==============================================
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Services\DockerService;
-use Pandora\Core\Security\SecurityManager;
+use Agtsdbx\Services\DockerService;
+use Agtsdbx\Core\Security\SecurityManager;
 
 class DockerController extends BaseController
 {
@@ -74,7 +74,7 @@ class DockerController extends BaseController
                 escapeshellarg($container)
             );
             
-            $executor = new \Pandora\Services\ExecutionService($this->config, $this->logger);
+            $executor = new \Agtsdbx\Services\ExecutionService($this->config, $this->logger);
             $result = $executor->execute($command, ['timeout' => 30]);
             
             if ($result['success']) {

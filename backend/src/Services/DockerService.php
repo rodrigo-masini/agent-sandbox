@@ -3,10 +3,10 @@
 // DOCKER SERVICE
 // ==============================================
 
-namespace Pandora\Services;
+namespace Agtsdbx\Services;
 
-use Pandora\Utils\Config;
-use Pandora\Utils\Logger;
+use Agtsdbx\Utils\Config;
+use Agtsdbx\Utils\Logger;
 
 class DockerService
 {

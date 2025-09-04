@@ -1,10 +1,10 @@
 <?php
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Services\ExecutionService;
-use Pandora\Core\Security\SecurityManager;
-use Pandora\Utils\Logger;
+use Agtsdbx\Services\ExecutionService;
+use Agtsdbx\Core\Security\SecurityManager;
+use Agtsdbx\Utils\Logger;
 
 class ExecutionController extends BaseController
 {

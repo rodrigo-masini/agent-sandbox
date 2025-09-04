@@ -3,10 +3,10 @@
 // DATABASE CONTROLLER
 // ==============================================
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Services\DatabaseService;
-use Pandora\Core\Security\SecurityManager;
+use Agtsdbx\Services\DatabaseService;
+use Agtsdbx\Core\Security\SecurityManager;
 
 class DatabaseController extends BaseController
 {

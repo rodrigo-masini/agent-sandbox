@@ -3,9 +3,9 @@
 // FILE MANAGER
 // ==============================================
 
-namespace Pandora\Storage;
+namespace Agtsdbx\Storage;
 
-use Pandora\Utils\Config;
+use Agtsdbx\Utils\Config;
 
 class FileManager
 {

@@ -1,9 +1,9 @@
 <?php
 
-namespace Pandora\Core\Security;
+namespace Agtsdbx\Core\Security;
 
-use Pandora\Utils\Config;
-use Pandora\Utils\Logger;
+use Agtsdbx\Utils\Config;
+use Agtsdbx\Utils\Logger;
 
 class SecurityManager
 {

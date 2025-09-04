@@ -9,7 +9,7 @@ import time
 from .base_client import BaseClient
 
 @dataclass
-class TelaConfig:
+class FabricConfig:
     api_key: str
     org_id: str
     project_id: str
@@ -19,8 +19,8 @@ class TelaConfig:
     max_retries: int = 3
     retry_delay: float = 1.0
 
-class TelaClient(BaseClient):
-    def __init__(self, config: TelaConfig):
+class FabricClient(BaseClient):
+    def __init__(self, config: FabricConfig):
         super().__init__(config.timeout, config.max_retries, config.retry_delay)
         self.config = config
         self.client = AsyncOpenAI(
@@ -137,7 +137,7 @@ class TelaClient(BaseClient):
         }
 
     async def health_check(self) -> Dict:
-        """Check the health of the Tela/Fabric service."""
+        """Check the health of the Fabric service."""
         try:
             response = await self.chat_completion([
                 {"role": "user", "content": "Hello"}

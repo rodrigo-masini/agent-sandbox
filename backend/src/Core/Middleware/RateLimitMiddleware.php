@@ -1,9 +1,9 @@
 <?php
 
-namespace Pandora\Core\Middleware;
+namespace Agtsdbx\Core\Middleware;
 
-use Pandora\Utils\Config;
-use Pandora\Storage\CacheManager;
+use Agtsdbx\Utils\Config;
+use Agtsdbx\Storage\CacheManager;
 
 class RateLimitMiddleware
 {

@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 
 from ..core.config import Config
 from ..core.auth import AuthManager
-from ..clients.tela_client import TelaClient, TelaConfig
-from ..clients.pandora_client import PandoraClient
+from ..clients.fabric_client import FabricClient, FabricConfig
+from ..clients.agtsdbx_client import AgtsdbxClient
 from ..tools.execution_tools import ExecutionTools
 from ..tools.file_tools import FileTools
 from ..tools.system_tools import SystemTools
@@ -20,12 +20,12 @@ from ..ui.components.terminal import TerminalComponent
 from ..ui.components.system_monitor import SystemMonitorComponent
 from ..ui.layouts.main_layout import MainLayout
 
-class PandoraApp:
+class AgtsdbxApp:
     def __init__(self):
         self.config = Config()
         self.auth_manager = AuthManager(self.config)
-        self.tela_client = None
-        self.pandora_client = None
+        self.fabric_client = None
+        self.agtsdbx_client = None
         self.tools = {}
         self.messages = []
         self.components = {}
@@ -33,28 +33,28 @@ class PandoraApp:
     async def initialize(self):
         """Initialize the application components."""
         # Initialize clients
-        tela_config = TelaConfig(
-            api_key=self.config.get("TELAOS_API_KEY"),
-            org_id=self.config.get("TELAOS_ORG_ID"),
-            project_id=self.config.get("TELAOS_PROJECT_ID"),
-            base_url=self.config.get("TELAOS_BASE_URL", "https://api.telaos.com/v1"),
-            model=self.config.get("TELAOS_MODEL", "wizard"),
-            timeout=self.config.get("TELAOS_TIMEOUT", 300),
+        fabric_config = FabricConfig(
+            api_key=self.config.get("FABRIC_API_KEY"),
+            org_id=self.config.get("FABRIC_ORG_ID"),
+            project_id=self.config.get("FABRIC_PROJECT_ID"),
+            base_url=self.config.get("FABRIC_BASE_URL", "https://api.telaos.com/v1"),
+            model=self.config.get("FABRIC_MODEL", "wizard"),
+            timeout=self.config.get("FABRIC_TIMEOUT", 300),
         )
         
-        self.tela_client = TelaClient(tela_config)
-        self.pandora_client = PandoraClient(
-            base_url=self.config.get("PANDORA_BASE_URL", "http://localhost:8000"),
-            timeout=self.config.get("PANDORA_TIMEOUT", 300)
+        self.fabric_client = FabricClient(fabric_config)
+        self.agtsdbx_client = AgtsdbxClient(
+            base_url=self.config.get("AGTSDBX_BASE_URL", "http://localhost:8000"),
+            timeout=self.config.get("AGTSDBX_TIMEOUT", 300)
         )
         
         # Initialize tools
         self.tools = {
-            "execution": ExecutionTools(self.pandora_client),
-            "file": FileTools(self.pandora_client),
-            "system": SystemTools(self.pandora_client),
-            "docker": DockerTools(self.pandora_client),
-            "network": NetworkTools(self.pandora_client),
+            "execution": ExecutionTools(self.agtsdbx_client),
+            "file": FileTools(self.agtsdbx_client),
+            "system": SystemTools(self.agtsdbx_client),
+            "docker": DockerTools(self.agtsdbx_client),
+            "network": NetworkTools(self.agtsdbx_client),
         }
         
         # Health checks
@@ -63,15 +63,15 @@ class PandoraApp:
     async def _perform_health_checks(self):
         """Perform health checks on all services."""
         try:
-            tela_health = await self.tela_client.health_check()
-            async with self.pandora_client as client:
-                pandora_health = await client.health_check()
+            fabric_health = await self.fabric_client.health_check()
+            async with self.agtsdbx_client as client:
+                agtsdbx_health = await client.health_check()
                 
-            if tela_health["status"] != "healthy":
-                ui.notify(f"Tela/Fabric service unhealthy: {tela_health.get('error', 'Unknown error')}", type="negative")
+            if fabric_health["status"] != "healthy":
+                ui.notify(f"Fabric service unhealthy: {fabric_health.get('error', 'Unknown error')}", type="negative")
                 
-            if pandora_health["status"] != "healthy":
-                ui.notify(f"Pandora service unhealthy: {pandora_health.get('error', 'Unknown error')}", type="negative")
+            if agtsdbx_health["status"] != "healthy":
+                ui.notify(f"Agtsdbx service unhealthy: {agtsdbx_health.get('error', 'Unknown error')}", type="negative")
                 
         except Exception as e:
             ui.notify(f"Health check failed: {str(e)}", type="negative")
@@ -128,7 +128,7 @@ class PandoraApp:
         
         try:
             # Get initial response from AI
-            response = await self.tela_client.chat_completion(
+            response = await self.fabric_client.chat_completion(
                 messages=self.messages,
                 tools=self.get_all_tool_definitions(),
                 tool_choice="auto"
@@ -143,7 +143,7 @@ class PandoraApp:
                 self.messages.extend(tool_responses)
                 
                 # Get final response after tool execution
-                final_response = await self.tela_client.chat_completion(
+                final_response = await self.fabric_client.chat_completion(
                     messages=self.messages
                 )
                 
@@ -165,7 +165,7 @@ class PandoraApp:
         
         try:
             # Handle tool calls first (non-streaming)
-            response = await self.tela_client.chat_completion(
+            response = await self.fabric_client.chat_completion(
                 messages=self.messages,
                 tools=self.get_all_tool_definitions(),
                 tool_choice="auto"
@@ -179,7 +179,7 @@ class PandoraApp:
                 self.messages.extend(tool_responses)
             
             # Stream final response
-            async for chunk in self.tela_client.chat_completion(
+            async for chunk in self.fabric_client.chat_completion(
                 messages=self.messages,
                 stream=True
             ):
@@ -190,22 +190,22 @@ class PandoraApp:
             yield f"Error: {str(e)}"
 
 # Global app instance
-pandora_app = PandoraApp()
+agtsdbx_app = AgtsdbxApp()
 
 @ui.page('/')
 async def main_page():
     """Main application page."""
-    if not pandora_app.tela_client:
-        await pandora_app.initialize()
+    if not agtsdbx_app.fabric_client:
+        await agtsdbx_app.initialize()
     
     # Create main layout
-    layout = MainLayout(pandora_app)
+    layout = MainLayout(agtsdbx_app)
     await layout.render()
 
 @ui.page('/admin')
 async def admin_page():
     """Admin interface page."""
-    if not pandora_app.auth_manager.is_admin():
+    if not agtsdbx_app.auth_manager.is_admin():
         ui.navigate.to('/')
         return
         
@@ -217,16 +217,16 @@ async def admin_page():
 async def health_endpoint():
     """Health check endpoint."""
     try:
-        if pandora_app.tela_client and pandora_app.pandora_client:
-            tela_health = await pandora_app.tela_client.health_check()
-            async with pandora_app.pandora_client as client:
-                pandora_health = await client.health_check()
+        if agtsdbx_app.fabric_client and agtsdbx_app.agtsdbx_client:
+            fabric_health = await agtsdbx_app.fabric_client.health_check()
+            async with agtsdbx_app.agtsdbx_client as client:
+                agtsdbx_health = await client.health_check()
                 
             return {
                 "status": "healthy",
                 "services": {
-                    "tela": tela_health,
-                    "pandora": pandora_health
+                    "fabric": fabric_health,
+                    "agtsdbx": agtsdbx_health
                 }
             }
         else:
@@ -237,7 +237,7 @@ async def health_endpoint():
 def run_app():
     """Run the application."""
     ui.run(
-        title="Pandora Enterprise - AI-Powered System Interface",
+        title="Agent Sandbox - AI-Powered System Interface",
         port=int(os.getenv("PORT", 8080)),
         host=os.getenv("HOST", "0.0.0.0"),
         reload=os.getenv("DEBUG", "false").lower() == "true",

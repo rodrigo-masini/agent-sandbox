@@ -1,9 +1,9 @@
 <?php
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Services\FileService;
-use Pandora\Core\Security\SecurityManager;
+use Agtsdbx\Services\FileService;
+use Agtsdbx\Core\Security\SecurityManager;
 
 class FileController extends BaseController
 {

@@ -3,10 +3,10 @@
 // BASE CONTROLLER
 // ==============================================
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Utils\Config;
-use Pandora\Utils\Logger;
+use Agtsdbx\Utils\Config;
+use Agtsdbx\Utils\Logger;
 
 abstract class BaseController
 {

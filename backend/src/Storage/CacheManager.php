@@ -3,9 +3,9 @@
 // CACHE MANAGER
 // ==============================================
 
-namespace Pandora\Storage;
+namespace Agtsdbx\Storage;
 
-use Pandora\Utils\Config;
+use Agtsdbx\Utils\Config;
 
 class CacheManager
 {
@@ -165,7 +165,7 @@ class CacheManager
 
     private function prefixKey(string $key): string
     {
-        $prefix = $this->config->get('cache.prefix', 'pandora');
+        $prefix = $this->config->get('cache.prefix', 'Agtsdbx');
         return $prefix . ':' . $key;
     }
 

@@ -1,0 +1,53 @@
+# Development dependencies for the entire project
+
+# Python dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.12.0
+flake8>=6.1.0
+mypy>=1.7.0
+pre-commit>=3.6.0
+ipython>=8.18.0
+sphinx>=7.0.0
+sphinx-rtd-theme>=1.3.0
+
+# Documentation
+mkdocs>=1.5.0
+mkdocs-material>=9.0.0
+mkdocstrings>=0.24.0
+
+# Code quality
+bandit>=1.7.0
+safety>=2.3.0
+pylint>=3.0.0
+
+# Performance testing
+locust>=2.17.0
+
+# Monitoring
+prometheus-client>=0.19.0
+
+# Deployment tools
+ansible>=8.0.0
+fabric>=3.2.0
+invoke>=2.2.0
+
+# Cloud SDKs (optional)
+boto3>=1.26.0  # AWS
+google-cloud-storage>=2.10.0  # GCP
+azure-storage-blob>=12.19.0  # Azure
+
+# Database migrations
+alembic>=1.13.0
+
+# API testing
+httpx>=0.25.0
+requests>=2.31.0
+responses>=0.24.0
+
+# Load testing
+artillery>=2.0.0
+
+# Security scanning
+semgrep>=1.45.0

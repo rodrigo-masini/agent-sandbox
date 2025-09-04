@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Agent Sandbox{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/custom.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="theme-dark">
+    <div id="notification-container"></div>
+    
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <span class="logo">🔧</span>
+            <span class="brand-text">Agent Sandbox</span>
+        </div>
+        
+        <div class="navbar-status">
+            <span id="fabric-status" class="status-indicator" title="Fabric API"></span>
+            <span id="agtsdbx-status" class="status-indicator" title="Backend"></span>
+            <span id="docker-status" class="status-indicator" title="Docker"></span>
+            <span id="connection-status" class="status-indicator" title="WebSocket"></span>
+        </div>
+        
+        <div class="navbar-actions">
+            <button id="theme-toggle" class="btn-icon" title="Toggle Theme">
+                <span>🌙</span>
+            </button>
+            <button class="btn-icon" title="Settings">
+                <span>⚙️</span>
+            </button>
+        </div>
+    </nav>
+    
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer class="footer">
+        <p>&copy; 2025 Agent Sandbox - AI-Powered System Interface</p>
+    </footer>
+    
+    <script src="/static/js/app.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

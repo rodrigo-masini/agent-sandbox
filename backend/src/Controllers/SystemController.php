@@ -3,9 +3,9 @@
 // SYSTEM CONTROLLER
 // ==============================================
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Services\SystemService;
+use Agtsdbx\Services\SystemService;
 
 class SystemController extends BaseController
 {

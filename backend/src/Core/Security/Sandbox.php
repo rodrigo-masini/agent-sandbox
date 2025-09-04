@@ -3,9 +3,9 @@
 // SANDBOX IMPLEMENTATION
 // ==============================================
 
-namespace Pandora\Core\Security;
+namespace Agtsdbx\Core\Security;
 
-use Pandora\Utils\Config;
+use Agtsdbx\Utils\Config;
 
 class Sandbox
 {

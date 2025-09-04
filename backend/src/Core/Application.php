@@ -1,14 +1,14 @@
 <?php
 
-namespace Pandora\Core;
+namespace Agtsdbx\Core;
 
-use Pandora\Core\Middleware\AuthMiddleware;
-use Pandora\Core\Middleware\RateLimitMiddleware;
-use Pandora\Core\Middleware\LoggingMiddleware;
-use Pandora\Core\Middleware\ValidationMiddleware;
-use Pandora\Core\Middleware\SecurityMiddleware;
-use Pandora\Utils\Logger;
-use Pandora\Utils\Config;
+use Agtsdbx\Core\Middleware\AuthMiddleware;
+use Agtsdbx\Core\Middleware\RateLimitMiddleware;
+use Agtsdbx\Core\Middleware\LoggingMiddleware;
+use Agtsdbx\Core\Middleware\ValidationMiddleware;
+use Agtsdbx\Core\Middleware\SecurityMiddleware;
+use Agtsdbx\Utils\Logger;
+use Agtsdbx\Utils\Config;
 
 class Application
 {

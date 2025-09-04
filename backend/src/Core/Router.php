@@ -1,8 +1,8 @@
 <?php
 
-namespace Pandora\Core;
+namespace Agtsdbx\Core;
 
-use Pandora\Utils\Logger;
+use Agtsdbx\Utils\Logger;
 
 class Router
 {
@@ -72,7 +72,7 @@ class Router
     private function callHandler(string $handler, array $request, array $matches): array
     {
         [$controllerName, $methodName] = explode('@', $handler);
-        $controllerClass = "Pandora\\Controllers\\$controllerName";
+        $controllerClass = "Agtsdbx\\Controllers\\$controllerName";
 
         if (!class_exists($controllerClass)) {
             throw new \Exception("Controller $controllerClass not found");

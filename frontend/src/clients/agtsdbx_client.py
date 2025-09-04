@@ -6,10 +6,10 @@ import json
 import time
 from .base_client import BaseClient
 
-class PandoraClient(BaseClient):
+class AgtsdbxClient(BaseClient):
     def __init__(self, base_url: str = None, timeout: int = 300):
         super().__init__(timeout)
-        self.base_url = base_url or os.getenv("PANDORA_BASE_URL", "http://localhost:8000")
+        self.base_url = base_url or os.getenv("AGTSDBX_BASE_URL", "http://localhost:8000")
         self.session = None
 
     async def __aenter__(self):
@@ -166,6 +166,15 @@ class PandoraClient(BaseClient):
             self.logger.error(f"Docker run failed: {e}")
             raise
 
+    async def docker_list(self) -> Dict:
+        """List Docker containers."""
+        try:
+            response = await self._make_request("GET", "/api/v1/docker/list")
+            return response
+        except Exception as e:
+            self.logger.error(f"Docker list failed: {e}")
+            raise
+
     async def network_request(
         self,
         url: str,
@@ -174,7 +183,7 @@ class PandoraClient(BaseClient):
         data: Optional[Any] = None,
         options: Optional[Dict] = None
     ) -> Dict:
-        """Make a network request through Pandora."""
+        """Make a network request through Agtsdbx."""
         payload = {
             "url": url,
             "method": method,
@@ -191,7 +200,7 @@ class PandoraClient(BaseClient):
             raise
 
     async def health_check(self) -> Dict:
-        """Check Pandora service health."""
+        """Check Agtsdbx service health."""
         try:
             response = await self._make_request("GET", "/health", timeout=10)
             return {"status": "healthy", **response}

@@ -35,7 +35,7 @@ services:
       - ./frontend:/app
     environment:
       - DEBUG=true
-      - AGTSDBX_BASE_URL=http://pandora:8000
+      - AGTSDBX_BASE_URL=http://agtsdbx:8000
     env_file:
       - .env
     depends_on:
@@ -57,9 +57,9 @@ services:
     image: postgres:15
     container_name: agtsdbx-db-dev
     environment:
-      - POSTGRES_DB=pandora
-      - POSTGRES_USER=pandora
-      - POSTGRES_PASSWORD=pandora_dev_password
+      - POSTGRES_DB=agtsdbx
+      - POSTGRES_USER=agtsdbx
+      - POSTGRES_PASSWORD=agtsdbx_dev_password
     ports:
       - "5432:5432"
     volumes:

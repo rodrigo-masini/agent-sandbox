@@ -3,11 +3,11 @@
 // FILE SERVICE
 // ==============================================
 
-namespace Pandora\Services;
+namespace Agtsdbx\Services;
 
-use Pandora\Utils\Config;
-use Pandora\Utils\Logger;
-use Pandora\Core\Storage\FileManager;
+use Agtsdbx\Utils\Config;
+use Agtsdbx\Utils\Logger;
+use Agtsdbx\Core\Storage\FileManager;
 
 class FileService
 {

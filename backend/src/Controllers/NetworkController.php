@@ -3,10 +3,10 @@
 // NETWORK CONTROLLER
 // ==============================================
 
-namespace Pandora\Controllers;
+namespace Agtsdbx\Controllers;
 
-use Pandora\Services\NetworkService;
-use Pandora\Core\Security\SecurityManager;
+use Agtsdbx\Services\NetworkService;
+use Agtsdbx\Core\Security\SecurityManager;
 
 class NetworkController extends BaseController
 {
