@@ -30,7 +30,8 @@ COPY src /app/src
 COPY static /app/static
 COPY templates /app/templates
 
-RUN useradd -m -u 1000 pandora && chown -R pandora:pandora /app
+# Create consistent user
+RUN useradd -m -u 1000 agtsdbx && chown -R agtsdbx:agtsdbx /app
 USER agtsdbx
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
