@@ -28,7 +28,7 @@ class TerminalComponent:
             # Output area
             with ui.scroll_area().classes('w-full flex-grow bg-black p-2'):
                 self.output_area = ui.column().classes('w-full font-mono text-green-400')
-                self.add_output('Pandora Terminal v1.0.0')
+                self.add_output('Agtsdbx Terminal v1.0.0')
                 self.add_output('Type "help" for available commands')
                 self.add_output('-' * 40)
             
@@ -86,10 +86,10 @@ class TerminalComponent:
             await self.execute_command(command)
     
     async def execute_command(self, command: str):
-        """Execute a command through Pandora."""
+        """Execute a command through Agtsdbx."""
         try:
             from ...tools.execution_tools import ExecutionTools
-            exec_tools = ExecutionTools(self.app.pandora_client)
+            exec_tools = ExecutionTools(self.app.agtsdbx_client)
             
             # Show loading indicator
             self.add_output('Executing...', 'text-yellow-400')
@@ -126,7 +126,7 @@ Available Commands:
   clear    - Clear the terminal
   exit     - Exit terminal (use navigation menu)
   
-You can run any shell command available in the Pandora environment.
+You can run any shell command available in the Agtsdbx environment.
 Examples:
   ls       - List files
   pwd      - Show current directory
