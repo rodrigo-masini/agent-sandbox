@@ -1,0 +1,78 @@
+version: '3.9'
+
+services:
+  agtsdbx:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+      target: development
+    container_name: agtsdbx-backend-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - agtsdbx_workdir:/app/WORKDIR
+      - agtsdbx_storage:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+      - LOG_LEVEL=debug
+    env_file:
+      - .env
+    networks:
+      - agtsdbx_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: agtsdbx-frontend-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./frontend:/app
+    environment:
+      - DEBUG=true
+      - AGTSDBX_BASE_URL=http://pandora:8000
+    env_file:
+      - .env
+    depends_on:
+      - agtsdbx
+    networks:
+      - agtsdbx_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: agtsdbx-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - agtsdbx_network
+
+  postgres:
+    image: postgres:15
+    container_name: agtsdbx-db-dev
+    environment:
+      - POSTGRES_DB=pandora
+      - POSTGRES_USER=pandora
+      - POSTGRES_PASSWORD=pandora_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - agtsdbx_network
+
+volumes:
+  agtsdbx_workdir:
+  agtsdbx_storage:
+  redis_data:
+  postgres_data:
+
+networks:
+  agtsdbx_network:
+    driver: bridge
