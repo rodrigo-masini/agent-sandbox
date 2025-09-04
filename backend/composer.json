@@ -1,0 +1,36 @@
+{
+    "name": "agent/sandbox",
+    "description": "Magic Agent Sandbox",
+    "type": "project",
+    "require": {
+        "php": "^8.0",
+        "ext-pdo": "*",
+        "ext-json": "*",
+        "ext-curl": "*",
+        "ext-redis": "*",
+        "psr/log": "^3.0",
+        "firebase/php-jwt": "^6.0",
+        "monolog/monolog": "^3.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "mockery/mockery": "^1.6",
+        "phpstan/phpstan": "^1.10"
+    },
+    "autoload": {
+        "psr-4": {
+            "Pandora\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Pandora\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "analyse": "vendor/bin/phpstan analyse",
+        "format": "vendor/bin/php-cs-fixer fix"
+    }
+}
