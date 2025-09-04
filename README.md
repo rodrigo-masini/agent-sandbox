@@ -200,11 +200,6 @@ pandora-enterprise/
 │   ├── prometheus/       # Metrics collection
 │   └── grafana/          # Dashboards
 │
-├── deployment/           # Deployment configurations
-│   ├── kubernetes/       # K8s manifests
-│   ├── terraform/        # Infrastructure as code
-│   └── ansible/          # Configuration management
-│
 └── scripts/              # Utility scripts
 ```
 
