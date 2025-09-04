@@ -7,7 +7,7 @@ import json
 from .base_tool import BaseTool
 
 class FileTools(BaseTool):
-    """File operation tools for Pandora."""
+    """File operation tools for Agtsdbx."""
     
     def get_tool_definitions(self) -> List[Dict]:
         return [
@@ -137,7 +137,7 @@ class FileTools(BaseTool):
             
             options = {"append": append}
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.write_file(file_path, content, options)
                 
             if result.get("success"):
@@ -156,7 +156,7 @@ class FileTools(BaseTool):
             
             options = {"encoding": encoding}
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.read_file(file_path, options)
                 
             if result.get("success"):
@@ -179,7 +179,7 @@ class FileTools(BaseTool):
                 "pattern": pattern
             }
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.list_files(path, options)
                 
             if result.get("success"):
@@ -200,7 +200,7 @@ class FileTools(BaseTool):
         try:
             file_path = kwargs.get("file_path")
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.delete_file(file_path)
                 
             if result.get("success"):
@@ -219,7 +219,7 @@ class FileTools(BaseTool):
             
             command = f"mkdir {'-p ' if parents else ''}{path}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
                 
             if result.get("exit_code", 0) == 0:
