@@ -257,7 +257,7 @@ jobs:
           
       - name: Build Docker image for scanning
         run: |
-          docker build -t agtsdbx-scan:latest ./backend/docker/
+          docker build -t agtsdbx-scan:latest -f backend/docker/Dockerfile backend
         continue-on-error: true
           
       - name: Run Trivy on Docker image
