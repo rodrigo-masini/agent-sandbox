@@ -8,11 +8,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# ===== DEVELOPMENT STAGE =====
 FROM base AS development
 
-COPY requirements/dev.txt /app/requirements.txt
+# Copy requirements file - FIX: Copy the entire requirements directory
+COPY requirements /app/requirements
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dev requirements
+RUN pip install --no-cache-dir -r requirements/dev.txt
 
 COPY . /app
 
@@ -20,11 +23,14 @@ EXPOSE 8080
 
 CMD ["python", "src/app/main.py"]
 
+# ===== PRODUCTION STAGE =====
 FROM base AS production
 
-COPY requirements/prod.txt /app/requirements.txt
+# Copy requirements file - FIX: Copy the entire requirements directory
+COPY requirements /app/requirements
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Install prod requirements
+RUN pip install --no-cache-dir -r requirements/prod.txt
 
 COPY src /app/src
 COPY static /app/static
