@@ -174,7 +174,7 @@ jobs:
           
       - name: Start services
         run: |
-          docker compose up -d
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
           echo "Waiting for services to be ready..."
           sleep 20
           
