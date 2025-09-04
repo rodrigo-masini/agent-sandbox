@@ -9,3 +9,13 @@ services:
   redis:
     ports:
       - "16379:6379"  # Different external port
+  
+  agtsdbx:
+    environment:
+      # Override to use GitHub Actions services if needed
+      - DATABASE_URL=postgresql://agtsdbx:agtsdbx_dev_password@postgres:5432/agtsdbx
+      - REDIS_HOST=redis
+  
+  frontend:
+    environment:
+      - AGTSDBX_BASE_URL=http://agtsdbx:8000
