@@ -2,6 +2,7 @@
     "name": "agent/sandbox",
     "description": "Magic Agent Sandbox",
     "type": "project",
+    "license": "MIT",
     "require": {
         "php": "^8.0",
         "ext-pdo": "*",
