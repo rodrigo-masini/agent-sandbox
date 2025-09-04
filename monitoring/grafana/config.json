@@ -1,8 +1,8 @@
 {
   "dashboard": {
     "id": null,
-    "title": "Pandora System Overview",
-    "tags": ["pandora", "system"],
+    "title": "Agtsdbx System Overview",
+    "tags": ["agtsdbx", "system"],
     "timezone": "browser",
     "panels": [
       {
@@ -42,7 +42,7 @@
         "type": "graph",
         "targets": [
           {
-            "expr": "rate(pandora_commands_total[5m])",
+            "expr": "rate(agtsdbx_commands_total[5m])",
             "legendFormat": "Commands/sec"
           }
         ]
