@@ -70,7 +70,8 @@ RUN mkdir -p /app/storage/logs /app/storage/cache /app/WORKDIR \
 
 RUN rm -rf /app/tests /app/.git /app/.github /app/docker
 
-RUN adduser -D -u 1000 pandora
+# Create consistent user
+RUN adduser -D -u 1000 agtsdbx
 USER agtsdbx
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
