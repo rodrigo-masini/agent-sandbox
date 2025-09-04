@@ -173,7 +173,7 @@ class DockerTools(BaseTool):
                 "volumes": volumes
             }
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.docker_run(image, command, options)
                 
             if result.get("success"):
@@ -191,7 +191,7 @@ class DockerTools(BaseTool):
             show_all = kwargs.get("all", False)
             format_type = kwargs.get("format", "table")
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.docker_list()
                 
             if result.get("success"):
@@ -225,7 +225,7 @@ class DockerTools(BaseTool):
             
             command = f"docker stop -t {timeout} {container}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
                 
             if result.get("exit_code", 0) == 0:
@@ -244,7 +244,7 @@ class DockerTools(BaseTool):
             
             command = f"docker rm {'-f ' if force else ''}{container}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
                 
             if result.get("exit_code", 0) == 0:
@@ -264,7 +264,7 @@ class DockerTools(BaseTool):
             
             command = f"docker logs {'--follow ' if follow else ''}-n {lines} {container}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": 30 if not follow else 300})
                 
             if result.get("exit_code", 0) == 0:
