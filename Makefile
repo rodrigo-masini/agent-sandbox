@@ -1,3 +1,6 @@
+# Detect Docker Compose command
+DOCKER_COMPOSE := $(shell which docker-compose 2>/dev/null || echo "docker compose")
+
 .PHONY: help install dev prod test clean
 
 help:
@@ -15,37 +18,37 @@ help:
 
 install:
 	@echo "Installing dependencies..."
-	cd backend && composer install
-	cd frontend && pip install -r requirements/dev.txt
+	@if [ -f backend/composer.json ]; then cd backend && composer install; fi
+	@if [ -f frontend/requirements/dev.txt ]; then cd frontend && pip install -r requirements/dev.txt; fi
 	@echo "Creating .env file if not exists..."
 	@if [ ! -f .env ]; then cp .env.example .env; fi
 	@echo "Installation complete!"
 
 dev:
 	@echo "Starting development environment..."
-	docker-compose up -d
+	$(DOCKER_COMPOSE) up -d
 	@echo "Development environment started!"
 	@echo "Frontend: http://localhost:8080"
 	@echo "Backend: http://localhost:8000"
 
 prod:
 	@echo "Starting production environment..."
-	docker-compose -f docker-compose.prod.yml up -d
+	$(DOCKER_COMPOSE) -f docker-compose.prod.yml up -d
 	@echo "Production environment started!"
 
 test:
 	@echo "Running tests..."
-	cd backend && vendor/bin/phpunit
-	cd frontend && python -m pytest tests/
+	@if [ -f backend/vendor/bin/phpunit ]; then cd backend && vendor/bin/phpunit; fi
+	@if [ -f frontend/tests ]; then cd frontend && python -m pytest tests/; fi
 
 clean:
 	@echo "Cleaning up..."
-	docker-compose down -v
+	$(DOCKER_COMPOSE) down -v
 	rm -rf backend/vendor frontend/__pycache__
 	@echo "Cleanup complete!"
 
 logs:
-	docker-compose logs -f
+	$(DOCKER_COMPOSE) logs -f
 
 shell:
 	docker exec -it agtsdbx-backend-dev bash
