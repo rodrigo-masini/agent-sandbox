@@ -1,5 +1,6 @@
 FROM php:8.2-cli-alpine AS base
 
+# Install system dependencies INCLUDING PostgreSQL dev libraries
 RUN apk add --no-cache \
     bash \
     git \
@@ -8,6 +9,7 @@ RUN apk add --no-cache \
     unzip \
     docker-cli \
     sqlite \
+    postgresql-dev \
     postgresql-client \
     mysql-client \
     nodejs \
@@ -18,8 +20,10 @@ RUN apk add --no-cache \
     g++ \
     make \
     autoconf \
-    libc-dev
+    libc-dev \
+    linux-headers
 
+# Install PHP extensions
 RUN docker-php-ext-install \
     pdo \
     pdo_mysql \
@@ -29,12 +33,15 @@ RUN docker-php-ext-install \
     sockets \
     opcache
 
+# Install Redis extension
 RUN pecl install redis && docker-php-ext-enable redis
 
+# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
+# ===== DEVELOPMENT STAGE =====
 FROM base AS development
 
 RUN apk add --no-cache \
@@ -56,6 +63,7 @@ EXPOSE 8000
 
 CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
 
+# ===== PRODUCTION STAGE =====
 FROM base AS production
 
 COPY . /app
