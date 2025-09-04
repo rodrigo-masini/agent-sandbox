@@ -129,7 +129,7 @@ class SystemMonitorComponent:
         """Refresh all monitoring data."""
         try:
             from ...tools.system_tools import SystemTools
-            system_tools = SystemTools(self.app.pandora_client)
+            system_tools = SystemTools(self.app.agtsdbx_client)
             
             # Get system info
             info = await system_tools.get_system_info()
@@ -154,7 +154,7 @@ class SystemMonitorComponent:
         """Load process list."""
         try:
             from ...tools.system_tools import SystemTools
-            system_tools = SystemTools(self.app.pandora_client)
+            system_tools = SystemTools(self.app.agtsdbx_client)
             
             result = await system_tools.get_process_list(sort_by='cpu', limit=20)
             
@@ -170,7 +170,7 @@ class SystemMonitorComponent:
         """Test network connectivity."""
         try:
             from ...tools.system_tools import SystemTools
-            system_tools = SystemTools(self.app.pandora_client)
+            system_tools = SystemTools(self.app.agtsdbx_client)
             
             result = await system_tools.check_network_connectivity()
             
@@ -186,7 +186,7 @@ class SystemMonitorComponent:
         """Test DNS resolution."""
         try:
             from ...tools.network_tools import NetworkTools
-            network_tools = NetworkTools(self.app.pandora_client)
+            network_tools = NetworkTools(self.app.agtsdbx_client)
             
             result = await network_tools.dns_lookup(domain='google.com')
             
@@ -202,7 +202,7 @@ class SystemMonitorComponent:
         """Load Docker container status."""
         try:
             from ...tools.docker_tools import DockerTools
-            docker_tools = DockerTools(self.app.pandora_client)
+            docker_tools = DockerTools(self.app.agtsdbx_client)
             
             result = await docker_tools.docker_list(all=True, format='table')
             
