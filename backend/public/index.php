@@ -5,7 +5,7 @@
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
-use Pandora\Core\Application;
+use Agtsdbx\Core\Application;
 
 // Enable error reporting in development
 if (($_ENV['APP_ENV'] ?? 'development') === 'development') {
