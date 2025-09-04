@@ -1,4 +1,3 @@
-
 .PHONY: help install dev prod test clean
 
 help:
@@ -49,21 +48,21 @@ logs:
 	docker-compose logs -f
 
 shell:
-	docker exec -it pandora-backend-dev bash
+	docker exec -it agtsdbx-backend-dev bash
 
 migrate:
 	@echo "Running database migrations..."
-	docker exec pandora-backend-dev php artisan migrate
+	docker exec agtsdbx-backend-dev php artisan migrate
 
 backup:
 	@echo "Creating backup..."
 	mkdir -p backups
-	docker exec pandora-db-dev pg_dump -U pandora pandora > backups/pandora_$(shell date +%Y%m%d_%H%M%S).sql
+	docker exec agtsdbx-db-dev pg_dump -U agtsdbx agtsdbx > backups/agtsdbx_$(shell date +%Y%m%d_%H%M%S).sql
 	tar -czf backups/workdir_$(shell date +%Y%m%d_%H%M%S).tar.gz -C backend WORKDIR/
 	@echo "Backup complete!"
 
 restore:
 	@echo "Restoring from backup..."
 	@read -p "Enter backup file name: " backup; \
-	docker exec -i pandora-db-dev psql -U pandora pandora < backups/$$backup
+	docker exec -i agtsdbx-db-dev psql -U agtsdbx agtsdbx < backups/$$backup
 	@echo "Restore complete!"
