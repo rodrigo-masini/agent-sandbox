@@ -88,7 +88,7 @@ class DatabaseTools(BaseTool):
             else:
                 return f"Unsupported database type: {database_type}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": 60})
                 
             if result.get("exit_code", 0) == 0:
@@ -116,7 +116,7 @@ class DatabaseTools(BaseTool):
             else:
                 return f"Unsupported database type: {database_type}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": 300})
                 
             if result.get("exit_code", 0) == 0:
