@@ -119,7 +119,7 @@ class ExecutionTools(BaseTool):
         }
 
         try:
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, options)
                 
                 return self._format_execution_result(result)
@@ -141,7 +141,7 @@ class ExecutionTools(BaseTool):
         options = {"timeout": timeout}
 
         try:
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, options)
                 return self._format_execution_result(result)
                 
@@ -162,7 +162,7 @@ class ExecutionTools(BaseTool):
         async def execute_single(cmd):
             async with semaphore:
                 try:
-                    async with self.pandora_client as client:
+                    async with self.agtsdbx_client as client:
                         return await client.execute_command(cmd, {"timeout": timeout})
                 except Exception as e:
                     return {"error": str(e), "command": cmd}
