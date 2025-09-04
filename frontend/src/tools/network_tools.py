@@ -134,7 +134,7 @@ class NetworkTools(BaseTool):
             data = kwargs.get("data", None)
             timeout = kwargs.get("timeout", 30)
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.network_request(url, method, headers, data, {"timeout": timeout})
                 
             if result.get("success"):
@@ -158,7 +158,7 @@ class NetworkTools(BaseTool):
             
             command = f"curl -L -o {output_path} --max-time {timeout} {url}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": timeout + 10})
                 
             if result.get("exit_code", 0) == 0:
@@ -178,7 +178,7 @@ class NetworkTools(BaseTool):
             
             command = f"timeout {timeout} nc -zv {host} {port}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": timeout + 2})
                 
             if result.get("exit_code", 0) == 0:
@@ -197,7 +197,7 @@ class NetworkTools(BaseTool):
             
             command = f"dig +short {domain} {record_type}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": 10})
                 
             if result.get("exit_code", 0) == 0:
