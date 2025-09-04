@@ -1,0 +1,115 @@
+version: '3.9'
+
+services:
+  agtsdbx:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+      target: production
+    container_name: agtsdbx-backend
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=info
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_MAX_EXECUTION_TIME=300
+    volumes:
+      - agtsdbx_storage:/app/storage
+      - agtsdbx_workdir:/app/WORKDIR
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - agtsdbx_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    container_name: agtsdbx-frontend
+    restart: unless-stopped
+    environment:
+      - FABRIC_API_KEY=${FABRIC_API_KEY}
+      - FABRIC_ORG_ID=${FABRIC_ORG_ID}
+      - FABRIC_PROJECT_ID=${FABRIC_PROJECT_ID}
+      - FABRIC_BASE_URL=${FABRIC_BASE_URL:-https://api.telaos.com/v1}
+      - FABRIC_MODEL=${FABRIC_MODEL:-wizard}
+      - AGTSDBX_BASE_URL=http://pandora:8000
+      - LOG_LEVEL=info
+    depends_on:
+      agtsdbx:
+        condition: service_healthy
+    networks:
+      - agtsdbx_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: agtsdbx-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+    networks:
+      - agtsdbx_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: agtsdbx-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - agtsdbx_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: agtsdbx-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - agtsdbx_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: agtsdbx-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - agtsdbx_network
+
+volumes:
+  agtsdbx_storage:
+  agtsdbx_workdir:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  agtsdbx_network:
+    driver: bridge
