@@ -82,7 +82,7 @@ class SystemTools(BaseTool):
     async def get_system_info(self, **kwargs) -> str:
         """Get system information."""
         try:
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.get_system_info()
                 
             if result.get("success"):
@@ -109,7 +109,7 @@ class SystemTools(BaseTool):
             
             command = f"ps aux {sort_flag} | head -n {limit + 1}"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
                 
             if result.get("exit_code", 0) == 0:
@@ -125,7 +125,7 @@ class SystemTools(BaseTool):
         try:
             command = "df -h"
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
                 
             if result.get("exit_code", 0) == 0:
@@ -142,7 +142,7 @@ class SystemTools(BaseTool):
             hosts = kwargs.get("hosts", ["8.8.8.8", "1.1.1.1", "google.com"])
             results = []
             
-            async with self.pandora_client as client:
+            async with self.agtsdbx_client as client:
                 for host in hosts:
                     command = f"ping -c 1 -W 2 {host}"
                     result = await client.execute_command(command)
