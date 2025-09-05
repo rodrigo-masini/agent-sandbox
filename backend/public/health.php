@@ -3,16 +3,10 @@
 // HEALTH CHECK ENDPOINT
 // ==============================================
 
-require_once dirname(__DIR__) . '/vendor/autoload.php';
-
-use Agtsdbx\Core\Application;
-
+// Don't require autoloader for health check to minimize dependencies
 header('Content-Type: application/json');
 
 try {
-    // Don't initialize full application for health check
-    // Just check basic requirements
-    
     $health = [
         'status' => 'healthy',
         'timestamp' => date('c'),
@@ -27,13 +21,39 @@ try {
     // Check PHP version
     $health['checks']['php'] = version_compare(PHP_VERSION, '8.0.0', '>=');
     
-    // Check composer autoload
-    $health['checks']['autoload'] = class_exists('Agtsdbx\Utils\Config');
+    // Check if vendor directory exists (basic check for dependencies)
+    $health['checks']['dependencies'] = file_exists(dirname(__DIR__) . '/vendor/autoload.php');
     
-    // Overall status
+    // Try Redis connection but don't fail health check if it's not ready
+    if (extension_loaded('redis')) {
+        try {
+            $redis = new Redis();
+            $redis_host = $_ENV['REDIS_HOST'] ?? 'redis';
+            $redis_port = $_ENV['REDIS_PORT'] ?? 6379;
+            
+            // Short timeout for health check
+            if (@$redis->connect($redis_host, $redis_port, 1.0)) {
+                $health['checks']['redis'] = true;
+                $redis->close();
+            } else {
+                $health['checks']['redis'] = false;
+                error_log("Redis connection failed: Connection refused");
+            }
+        } catch (Exception $e) {
+            $health['checks']['redis'] = false;
+            error_log("Redis connection failed: " . $e->getMessage());
+        }
+    } else {
+        $health['checks']['redis'] = null; // Redis extension not loaded
+    }
+    
+    // Determine overall status
+    // Don't fail on Redis - it's not critical for basic operation
+    $critical_checks = ['filesystem', 'php', 'dependencies'];
     $allHealthy = true;
-    foreach ($health['checks'] as $check) {
-        if (!$check) {
+    
+    foreach ($critical_checks as $check) {
+        if (isset($health['checks'][$check]) && !$health['checks'][$check]) {
             $allHealthy = false;
             break;
         }
@@ -44,7 +64,7 @@ try {
     http_response_code($allHealthy ? 200 : 503);
     echo json_encode($health);
     
-} catch (\Throwable $e) {
+} catch (Throwable $e) {
     http_response_code(503);
     echo json_encode([
         'status' => 'unhealthy',

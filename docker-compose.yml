@@ -1,6 +1,42 @@
 version: '3.9'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: agtsdbx-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - agtsdbx_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  postgres:
+    image: postgres:15
+    container_name: agtsdbx-db-dev
+    environment:
+      - POSTGRES_DB=agtsdbx
+      - POSTGRES_USER=agtsdbx
+      - POSTGRES_PASSWORD=agtsdbx_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - agtsdbx_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agtsdbx -d agtsdbx"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   agtsdbx:
     build:
       context: ./backend
@@ -29,11 +65,17 @@ services:
       - .env
     depends_on:
       redis:
-        condition: service_healthy # This is the fix
+        condition: service_healthy
       postgres:
-        condition: service_healthy # This is the fix
+        condition: service_healthy
     networks:
       - agtsdbx_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   frontend:
     build:
@@ -57,43 +99,16 @@ services:
     env_file:
       - .env
     depends_on:
-      - agtsdbx
+      agtsdbx:
+        condition: service_healthy
     networks:
       - agtsdbx_network
-
-  redis:
-    image: redis:7-alpine
-    container_name: agtsdbx-redis-dev
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - agtsdbx_network
-    healthcheck: # This is the fix
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  postgres:
-    image: postgres:15
-    container_name: agtsdbx-db-dev
-    environment:
-      - POSTGRES_DB=agtsdbx
-      - POSTGRES_USER=agtsdbx
-      - POSTGRES_PASSWORD=agtsdbx_dev_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - agtsdbx_network
-    healthcheck: # This is the fix
-      test: ["CMD-SHELL", "pg_isready -U agtsdbx -d agtsdbx"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
 volumes:
   agtsdbx_workdir:

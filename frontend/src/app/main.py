@@ -243,18 +243,23 @@ def run_app():
     # Configure ui.run parameters based on NiceGUI version
     run_params = {
         "title": "Agent Sandbox - AI-Powered System Interface",
-        "port": agtsdbx_app.config.get("PORT"),
-        "host": agtsdbx_app.config.get("HOST"),
-        "reload": agtsdbx_app.config.get("DEBUG"),
+        "port": int(os.environ.get("PORT", 8080)),
+        "host": os.environ.get("HOST", "0.0.0.0"),
+        "reload": False,  # Disable reload in production/Docker
         "show": False,
         "favicon": "🔧"
     }
     
-    # Try to set socket.io configuration if supported
-    # NiceGUI 1.4.20 doesn't support socket_io_server_kwargs
-    # This can be added back when upgrading to a newer version
-    
     ui.run(**run_params)
 
-if __name__ == "__main__":
+# Fix for module execution in Docker
+if __name__ in {"__main__", "__mp_main__"}:
     run_app()
+elif __name__ == "src.app.main":
+    # When run as module with python -m
+    run_app()
+else:
+    # Ensure ui.run() is called even when imported as module
+    import sys
+    if any('src.app.main' in arg for arg in sys.argv):
+        run_app()
