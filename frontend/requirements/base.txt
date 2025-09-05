@@ -20,6 +20,6 @@ aiocache==0.12.0
 prometheus-client==0.19.0
 
 python-multipart==0.0.9
-python-json-logger==2.0.7
+python-json-logger==3.3.0
 tenacity==8.2.0
 click==8.1.0
