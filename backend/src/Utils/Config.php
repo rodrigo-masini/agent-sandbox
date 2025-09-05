@@ -15,6 +15,19 @@ class Config
         $this->loadConfigFiles($configPath);
     }
 
+    // Add a static method to get the single instance
+    public static function getInstance(string $configPath = null): Config
+    {
+        if (self::$instance === null) {
+            self::$instance = new self($configPath);
+        }
+        return self::$instance;
+    }
+
+    // Prevent cloning and unserialization
+    private function __clone() {}
+    public function __wakeup() {}    
+
     private function loadEnvironment(): void
     {
         // Load from environment variables

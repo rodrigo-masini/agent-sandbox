@@ -240,12 +240,19 @@ async def health_endpoint():
 
 def run_app():
     """Run the application."""
+    # This is the correct, documented way to configure the underlying Socket.IO server.
+    # We directly set the ping interval and timeout to ensure stable connections.
+    socket_io_config = {
+        "ping_interval": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 0.8,
+        "ping_timeout": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 0.4
+    }
+
     ui.run(
         title="Agent Sandbox - AI-Powered System Interface",
-        port=int(os.getenv("PORT", 8080)),
-        host=os.getenv("HOST", "0.0.0.0"),
-        reload=os.getenv("DEBUG", "false").lower() == "true",
-        reconnect_timeout=agtsdbx_app.config.get("RECONNECT_TIMEOUT"),
+        port=agtsdbx_app.config.get("PORT"),
+        host=agtsdbx_app.config.get("HOST"),
+        reload=agtsdbx_app.config.get("DEBUG"),
+        socket_io_server_kwargs=socket_io_config,  # <-- THE CORRECT FIX IS HERE
         show=False,
         favicon="🔧"
     )

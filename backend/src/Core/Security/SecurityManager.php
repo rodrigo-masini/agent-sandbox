@@ -12,7 +12,7 @@ class SecurityManager
 
     public function __construct(Config $config, Logger $logger = null)
     {
-        // Remove unused $config property
+        $config = $config ?? Config::getInstance();
         $this->logger = $logger ?? new Logger($config);
         $this->securityConfig = $config->get('security', []);
     }

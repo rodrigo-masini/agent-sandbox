@@ -15,7 +15,7 @@ abstract class BaseController
 
     public function __construct()
     {
-        $this->config = new Config();
+        $this->config = Config::getInstance();
         $this->logger = new Logger($this->config);
     }
 

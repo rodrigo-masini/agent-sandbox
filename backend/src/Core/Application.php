@@ -19,7 +19,7 @@ class Application
 
     public function __construct()
     {
-        $this->config = new Config();
+        $this->config = Config::getInstance();
         $this->logger = new Logger($this->config);
         $this->router = new Router($this->logger);
         $this->initializeMiddleware();
