@@ -75,6 +75,9 @@ class Config:
             "ENABLE_DOCKER": os.getenv("ENABLE_DOCKER", "true").lower() == "true",
             "ENABLE_NETWORK": os.getenv("ENABLE_NETWORK", "true").lower() == "true",
             "ENABLE_DATABASE": os.getenv("ENABLE_DATABASE", "true").lower() == "true",
+
+            # WebSocket Configuration (add this)
+            "RECONNECT_TIMEOUT": int(os.getenv("RECONNECT_TIMEOUT", "5")),
             
             # Rate Limiting
             "RATE_LIMIT_ENABLED": os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",

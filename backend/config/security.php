@@ -3,18 +3,18 @@
 return [
     // Authentication settings
     'auth' => [
-        'jwt_secret' => env('JWT_SECRET'),
-        'jwt_expiry' => env('JWT_EXPIRY', 3600), // 1 hour
-        'api_keys' => explode(',', env('API_KEYS', '')),
-        'require_auth' => env('REQUIRE_AUTH', true),
+        'jwt_secret' => $_ENV['JWT_SECRET'] ?? '',
+        'jwt_expiry' => $_ENV['JWT_EXPIRY'] ?? 3600,
+        'api_keys' => explode(',', $_ENV['API_KEYS'] ?? ''),
+        'require_auth' => ($_ENV['REQUIRE_AUTH'] ?? 'true') === 'true',
     ],
-
+    
     // Rate limiting
     'rate_limit' => [
-        'enabled' => env('RATE_LIMIT_ENABLED', true),
-        'requests_per_minute' => env('RATE_LIMIT_RPM', 60),
-        'window_seconds' => env('RATE_LIMIT_WINDOW', 60),
-        'burst_limit' => env('RATE_LIMIT_BURST', 100),
+        'enabled' => ($_ENV['RATE_LIMIT_ENABLED'] ?? 'true') === 'true',
+        'requests_per_minute' => (int)($_ENV['RATE_LIMIT_RPM'] ?? 60),
+        'window_seconds' => (int)($_ENV['RATE_LIMIT_WINDOW'] ?? 60),
+        'burst_limit' => (int)($_ENV['RATE_LIMIT_BURST'] ?? 100),
     ],
 
     // Command security
