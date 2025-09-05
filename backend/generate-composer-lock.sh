@@ -1,15 +1,16 @@
 #!/bin/bash
-# This script generates composer.lock for each PHP version
+# Generate composer.lock file for consistent dependencies
 
-set -e
+cd "$(dirname "$0")"
 
-echo "Generating composer.lock for PHP compatibility..."
-
-# Try to use the lowest PHP version we support
-docker run --rm \
-    -v "$(pwd)":/app \
-    -w /app \
-    composer:2 \
-    composer update --no-interaction --prefer-dist --prefer-stable
-
-echo "composer.lock generated successfully"
+if [ ! -f composer.lock ]; then
+    echo "Generating composer.lock..."
+    docker run --rm \
+        -v "$(pwd)":/app \
+        -w /app \
+        composer:2 \
+        composer update --no-interaction --prefer-dist --prefer-stable
+    echo "composer.lock generated successfully"
+else
+    echo "composer.lock already exists"
+fi

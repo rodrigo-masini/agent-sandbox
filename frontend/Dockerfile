@@ -11,30 +11,39 @@ WORKDIR /app
 # ===== DEVELOPMENT STAGE =====
 FROM base AS development
 
-# Copy requirements file - FIX: Copy the entire requirements directory
+# Copy requirements directory first
 COPY requirements /app/requirements
 
 # Install dev requirements
 RUN pip install --no-cache-dir -r requirements/dev.txt
 
+# Copy all application files
 COPY . /app
+
+# Set Python path to ensure imports work
+ENV PYTHONPATH=/app
 
 EXPOSE 8080
 
-CMD ["python", "src/app/main.py"]
+# Use module execution to avoid import issues
+CMD ["python", "-m", "src.app.main"]
 
 # ===== PRODUCTION STAGE =====
 FROM base AS production
 
-# Copy requirements file - FIX: Copy the entire requirements directory
+# Copy requirements directory first  
 COPY requirements /app/requirements
 
 # Install prod requirements
 RUN pip install --no-cache-dir -r requirements/prod.txt
 
+# Copy only necessary directories for production
 COPY src /app/src
 COPY static /app/static
 COPY templates /app/templates
+
+# Set Python path
+ENV PYTHONPATH=/app
 
 # Create consistent user
 RUN useradd -m -u 1000 agtsdbx && chown -R agtsdbx:agtsdbx /app
@@ -47,4 +56,4 @@ EXPOSE 8080
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
-CMD ["python", "-O", "src/app/main.py"]
+CMD ["python", "-O", "-m", "src.app.main"]

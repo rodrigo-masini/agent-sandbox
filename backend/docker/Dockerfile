@@ -50,10 +50,16 @@ RUN apk add --no-cache \
     strace \
     tcpdump
 
-COPY . /app
+# IMPORTANT: Copy composer files first for better caching
+COPY composer.json composer.lock* ./
 
+# Install dependencies BEFORE copying all files
 RUN composer install --no-scripts --no-autoloader
 
+# NOW copy all application files
+COPY . /app
+
+# Generate optimized autoloader AFTER all files are copied
 RUN composer dump-autoload --optimize
 
 RUN mkdir -p /app/storage/logs /app/storage/cache /app/WORKDIR \
@@ -66,10 +72,16 @@ CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
 # ===== PRODUCTION STAGE =====
 FROM base AS production
 
-COPY . /app
+# Copy composer files first
+COPY composer.json composer.lock* ./
 
+# Install production dependencies
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 
+# Copy application files
+COPY . /app
+
+# Generate optimized autoloader for production
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 RUN mkdir -p /app/storage/logs /app/storage/cache /app/WORKDIR \

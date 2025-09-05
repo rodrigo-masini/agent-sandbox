@@ -10,9 +10,16 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      # DON'T mount the entire backend directory!
+      # Mount only source and config, NOT vendor
+      - ./backend/src:/app/src:ro
+      - ./backend/public:/app/public:ro
+      - ./backend/config:/app/config:ro
+      - ./backend/tests:/app/tests:ro
+      # Writable directories
       - agtsdbx_workdir:/app/WORKDIR
       - agtsdbx_storage:/app/storage
+      # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - APP_ENV=development
@@ -32,10 +39,16 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./frontend:/app
+      # DON'T mount the entire frontend directory!
+      # Mount only source code, NOT installed packages
+      - ./frontend/src:/app/src:ro
+      - ./frontend/static:/app/static:ro
+      - ./frontend/templates:/app/templates:ro
+      - ./frontend/tests:/app/tests:ro
     environment:
       - DEBUG=true
       - AGTSDBX_BASE_URL=http://agtsdbx:8000
+      - PYTHONPATH=/app
     env_file:
       - .env
     depends_on:

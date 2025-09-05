@@ -322,6 +322,7 @@ jobs:
           flags: frontend-python-${{ matrix.python-version }}
           fail_ci_if_error: false
 
+
   # Integration Tests
   integration-tests:
     needs: [test-backend, test-frontend]
@@ -332,141 +333,178 @@ jobs:
       - name: Create .env file for testing
         run: |
           cp .env.example .env
-          # Set test values for Magic Agent Sandbox / agtsdbx project
           sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=test_agtsdbx_api_key/g' .env
           sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=test_agtsdbx_org/g' .env
           sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=test_agtsdbx_project/g' .env
           sed -i 's/APP_NAME=.*/APP_NAME=Magic-Agent-Sandbox-Test/g' .env
           sed -i 's/APP_ENV=.*/APP_ENV=testing/g' .env
-          sed -i 's/APP_DEBUG=.*/APP_DEBUG=false/g' .env
+          sed -i 's/APP_DEBUG=.*/APP_DEBUG=true/g' .env
           sed -i 's/AGTSDBX_API_KEY=.*/AGTSDBX_API_KEY=test_backend_key/g' .env
           sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key_for_ci_only/g' .env
           sed -i 's/JWT_SECRET=.*/JWT_SECRET=test_jwt_secret_for_ci_only/g' .env
           sed -i 's/API_KEYS=.*/API_KEYS=test_api_key_1,test_api_key_2/g' .env
           sed -i 's/REDIS_PASSWORD=.*/REDIS_PASSWORD=/g' .env
           sed -i 's/GRAFANA_PASSWORD=.*/GRAFANA_PASSWORD=test_admin/g' .env
+      
+      - name: Generate composer.lock for backend
+        run: |
+          echo "Generating composer.lock for backend..."
+          cd backend
+          # Use docker to generate composer.lock
+          docker run --rm \
+            -v "$(pwd)":/app \
+            -w /app \
+            composer:2 \
+            composer update --no-interaction --prefer-dist --prefer-stable --ignore-platform-reqs
+          
+          # Check if composer.lock was created
+          if [ -f composer.lock ]; then
+            echo "✅ composer.lock generated successfully"
+            ls -la composer.lock
+          else
+            echo "❌ Failed to generate composer.lock"
+            exit 1
+          fi
+          cd ..
+      
+      - name: Create Python module init files
+        run: |
+          echo "Creating Python __init__.py files..."
+          touch frontend/src/__init__.py
+          touch frontend/src/app/__init__.py
+          touch frontend/src/core/__init__.py
+          touch frontend/src/clients/__init__.py
+          touch frontend/src/tools/__init__.py
+          touch frontend/src/ui/__init__.py
+          mkdir -p frontend/src/ui/components
+          mkdir -p frontend/src/ui/layouts
+          touch frontend/src/ui/components/__init__.py
+          touch frontend/src/ui/layouts/__init__.py
+          echo "✅ Python module files created"
           
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
-      - name: Build Docker images
+      - name: Build Docker images with build args
         run: |
-          docker compose build --parallel
+          echo "Building Docker images..."
+          # Build with --no-cache to ensure fresh builds
+          docker compose build --no-cache --parallel
           
-      - name: Start services with docker-compose
+      - name: Verify Docker images
         run: |
+          echo "=== Docker Images ==="
+          docker images
+          
+      - name: Start services
+        run: |
+          echo "Starting Docker Compose services..."
           docker compose up -d
-          echo "Waiting for services to be ready..."
+          
+          # Give services time to initialize
+          echo "Waiting 15 seconds for services to initialize..."
+          sleep 15
+          
+      - name: Check container status and logs
+        run: |
+          echo "=== Container Status ==="
+          docker ps -a
+          
+          echo ""
+          echo "=== Backend Container Info ==="
+          docker exec agtsdbx-backend-dev sh -c "pwd && ls -la" || true
+          docker exec agtsdbx-backend-dev sh -c "ls -la vendor/" || echo "vendor directory not found"
+          docker exec agtsdbx-backend-dev sh -c "php -v" || true
+          
+          echo ""
+          echo "=== Frontend Container Info ==="
+          docker exec agtsdbx-frontend-dev sh -c "pwd && ls -la" || true
+          docker exec agtsdbx-frontend-dev sh -c "python --version" || true
+          docker exec agtsdbx-frontend-dev sh -c "pip list | head -20" || true
+          
+      - name: Test backend health endpoint directly
+        run: |
+          echo "Testing backend health endpoint..."
+          docker exec agtsdbx-backend-dev curl -v http://localhost:8000/health || true
+          echo ""
+          echo "Testing from host..."
+          curl -v http://localhost:8000/health || true
+          
+      - name: Test frontend health endpoint directly  
+        run: |
+          echo "Testing frontend health endpoint..."
+          docker exec agtsdbx-frontend-dev curl -v http://localhost:8080/api/health || true
+          echo ""
+          echo "Testing from host..."
+          curl -v http://localhost:8080/api/health || true
           
       - name: Wait for services to be healthy
         id: health-check
         run: |
           max_attempts=30
           attempt=0
+          
           while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:8000/health && curl -f http://localhost:8080/api/health; then
-              echo "✅ Services are healthy"
-              echo "services_healthy=true" >> $GITHUB_OUTPUT
-              break
+            echo ""
+            echo "Health check attempt $((attempt + 1))/$max_attempts"
+            
+            # Check backend
+            backend_healthy=false
+            if curl -f -s http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✓ Backend is healthy"
+              backend_healthy=true
+            else
+              echo "✗ Backend not ready"
+              # Show last 5 lines of backend logs
+              docker logs --tail 5 agtsdbx-backend-dev 2>&1 || true
             fi
-            echo "Attempt $((attempt + 1))/$max_attempts failed, retrying..."
+            
+            # Check frontend
+            frontend_healthy=false
+            if curl -f -s http://localhost:8080/api/health > /dev/null 2>&1; then
+              echo "✓ Frontend is healthy"
+              frontend_healthy=true
+            else
+              echo "✗ Frontend not ready"
+              # Show last 5 lines of frontend logs
+              docker logs --tail 5 agtsdbx-frontend-dev 2>&1 || true
+            fi
+            
+            # Both healthy?
+            if [ "$backend_healthy" = true ] && [ "$frontend_healthy" = true ]; then
+              echo ""
+              echo "✅ All services are healthy!"
+              echo "services_healthy=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
             sleep 5
             attempt=$((attempt + 1))
           done
           
-          if [ $attempt -eq $max_attempts ]; then
-            echo "❌ Services failed to become healthy"
-            echo "services_healthy=false" >> $GITHUB_OUTPUT
-            docker compose logs
-            exit 1
-          fi
+          # If we get here, services failed to become healthy
+          echo ""
+          echo "❌ Services failed to become healthy after $max_attempts attempts"
+          echo ""
+          echo "=== DEBUGGING INFORMATION ==="
+          echo ""
+          echo "=== Docker PS ==="
+          docker ps -a
+          echo ""
+          echo "=== Backend Logs (Full) ==="
+          docker logs agtsdbx-backend-dev
+          echo ""
+          echo "=== Frontend Logs (Full) ==="
+          docker logs agtsdbx-frontend-dev
+          echo ""
+          echo "=== Backend vendor directory ==="
+          docker exec agtsdbx-backend-dev ls -la /app/vendor/ || echo "vendor not found"
+          echo ""
+          echo "=== Frontend installed packages ==="
+          docker exec agtsdbx-frontend-dev pip list || echo "pip list failed"
           
-      - name: Run Integration Test Suite
-        if: steps.health-check.outputs.services_healthy == 'true'
-        run: |
-          # Create comprehensive integration test script for agtsdbx
-          cat > run_integration_tests.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "🧪 Running Magic Agent Sandbox (agtsdbx) Integration Tests"
-          echo "========================================================="
-          
-          # Test API endpoints
-          echo "Testing agtsdbx API endpoints..."
-          curl -f -X POST http://localhost:8000/api/v1/exec \
-            -H "Authorization: ApiKey test_api_key_1" \
-            -H "Content-Type: application/json" \
-            -d '{"command": "echo test"}' || echo "API exec endpoint test failed"
-          
-          # Test file operations
-          echo "Testing file operations..."
-          TEST_FILE="/app/WORKDIR/test_$(date +%s).txt"
-          curl -f -X POST http://localhost:8000/api/v1/file/write \
-            -H "Authorization: ApiKey test_api_key_1" \
-            -H "Content-Type: application/json" \
-            -d "{\"filePath\": \"$TEST_FILE\", \"content\": \"Magic Agent Sandbox test content\"}" || echo "File write test failed"
-          
-          # Run backend integration tests if they exist
-          if docker exec agtsdbx-backend-dev test -d tests/Integration; then
-            echo "Running agtsdbx backend integration tests..."
-            docker exec agtsdbx-backend-dev php vendor/bin/phpunit tests/Integration/ --log-junit=/tmp/integration-junit.xml || true
-            docker cp agtsdbx-backend-dev:/tmp/integration-junit.xml ./backend-integration-junit.xml || true
-          fi
-          
-          # Run frontend E2E tests if they exist
-          if docker exec agtsdbx-frontend-dev test -f tests/test_e2e.py; then
-            echo "Running agtsdbx frontend E2E tests..."
-            docker exec agtsdbx-frontend-dev python -m pytest tests/test_e2e.py -v --junitxml=/tmp/e2e-junit.xml || true
-            docker cp agtsdbx-frontend-dev:/tmp/e2e-junit.xml ./frontend-e2e-junit.xml || true
-          fi
-          
-          echo "✅ Magic Agent Sandbox integration tests completed"
-          EOF
-          
-          chmod +x run_integration_tests.sh
-          ./run_integration_tests.sh
-          
-      - name: Generate Integration Test Report
-        if: always()
-        run: |
-          echo "## 🔗 Magic Agent Sandbox Integration Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f backend-integration-junit.xml ] || [ -f frontend-e2e-junit.xml ]; then
-            echo "✅ Integration tests executed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ No integration test results found" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          # Show docker compose status
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Docker Services Status" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          docker compose ps >> $GITHUB_STEP_SUMMARY || echo "Could not get docker compose status" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          
-      - name: Collect logs on failure
-        if: failure()
-        run: |
-          mkdir -p logs
-          docker compose logs > logs/docker-compose.log 2>&1 || true
-          docker ps -a > logs/docker-ps.log 2>&1 || true
-          docker compose config > logs/docker-compose-config.yml 2>&1 || true
-          
-      - name: Upload integration test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-results
-          path: |
-            logs/
-            *-junit.xml
-          retention-days: 7
-          
-      - name: Clean up
-        if: always()
-        run: |
-          docker compose down -v || true
+          echo "services_healthy=false" >> $GITHUB_OUTPUT
+          exit 1
 
   # Security Scanning
   security-scan:

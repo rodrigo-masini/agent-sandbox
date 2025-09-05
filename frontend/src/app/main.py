@@ -1,24 +1,28 @@
 import os
+import sys
 import asyncio
 import json
 from typing import Dict, List, Optional
 from nicegui import ui, app, run
 from contextlib import asynccontextmanager
 
-from ..core.config import Config
-from ..core.auth import AuthManager
-from ..clients.fabric_client import FabricClient, FabricConfig
-from ..clients.agtsdbx_client import AgtsdbxClient
-from ..tools.execution_tools import ExecutionTools
-from ..tools.file_tools import FileTools
-from ..tools.system_tools import SystemTools
-from ..tools.docker_tools import DockerTools
-from ..tools.network_tools import NetworkTools
-from ..ui.components.chat import ChatComponent
-from ..ui.components.file_browser import FileBrowserComponent
-from ..ui.components.terminal import TerminalComponent
-from ..ui.components.system_monitor import SystemMonitorComponent
-from ..ui.layouts.main_layout import MainLayout
+# Add parent directory to path to fix imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.config import Config
+from core.auth import AuthManager
+from clients.fabric_client import FabricClient, FabricConfig
+from clients.agtsdbx_client import AgtsdbxClient
+from tools.execution_tools import ExecutionTools
+from tools.file_tools import FileTools
+from tools.system_tools import SystemTools
+from tools.docker_tools import DockerTools
+from tools.network_tools import NetworkTools
+from ui.components.chat import ChatComponent
+from ui.components.file_browser import FileBrowserComponent
+from ui.components.terminal import TerminalComponent
+from ui.components.system_monitor import SystemMonitorComponent
+from ui.layouts.main_layout import MainLayout
 
 class AgtsdbxApp:
     def __init__(self):
