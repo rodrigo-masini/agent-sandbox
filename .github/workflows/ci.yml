@@ -20,6 +20,7 @@ permissions:
 env:
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
+  PROJECT_NAME: agtsdbx
 
 jobs:
   # Job to detect what changed (for optimization)
@@ -49,7 +50,7 @@ jobs:
               - '**/*.md'
               - 'docs/**'
 
-  # PHP Backend Tests - FIXED FOR PHP VERSION COMPATIBILITY
+  # PHP Backend Tests
   test-backend:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
@@ -57,7 +58,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: ['8.1', '8.2', '8.3']  # Dropped 8.0, added 8.3
+        php-version: ['8.1', '8.2', '8.3']
         dependencies: ['lowest', 'highest']
         exclude:
           # PHP 8.3 might have issues with lowest dependencies
@@ -160,8 +161,10 @@ jobs:
             echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
             # Parse junit.xml for summary
             if grep -q 'tests="' junit.xml; then
-              grep -o 'tests="[^"]*"' junit.xml | head -1 | sed 's/tests="/| Total Tests | /' | sed 's/"$/ |/' >> $GITHUB_STEP_SUMMARY
-              grep -o 'failures="[^"]*"' junit.xml | head -1 | sed 's/failures="/| Failures | /' | sed 's/"$/ |/' >> $GITHUB_STEP_SUMMARY
+              TESTS=$(grep -o 'tests="[^"]*"' junit.xml | head -1 | sed 's/tests="//;s/"//')
+              FAILURES=$(grep -o 'failures="[^"]*"' junit.xml | head -1 | sed 's/failures="//;s/"//')
+              echo "| Total Tests | ${TESTS:-0} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Failures | ${FAILURES:-0} |" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "No test results found" >> $GITHUB_STEP_SUMMARY
@@ -276,21 +279,25 @@ jobs:
           cd frontend
           echo "## Python ${{ matrix.python-version }} Test Results" >> $GITHUB_STEP_SUMMARY
           if [ -f junit.xml ]; then
-            python -c "
-import xml.etree.ElementTree as ET
-try:
-    tree = ET.parse('junit.xml')
-    root = tree.getroot()
-    tests = root.get('tests', '0')
-    failures = root.get('failures', '0')
-    errors = root.get('errors', '0')
-    time = root.get('time', '0')
-    print(f'| Tests | Failures | Errors | Time |')
-    print(f'|-------|----------|--------|------|')
-    print(f'| {tests} | {failures} | {errors} | {time}s |')
-except Exception as e:
-    print(f'Error parsing junit.xml: {e}')
-            " >> $GITHUB_STEP_SUMMARY || echo "Could not parse junit.xml" >> $GITHUB_STEP_SUMMARY
+            # Extract test metrics using grep and sed
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            
+            if grep -q 'tests=' junit.xml; then
+              TESTS=$(grep -o 'tests="[^"]*"' junit.xml | head -1 | sed 's/tests="//;s/"//')
+              FAILURES=$(grep -o 'failures="[^"]*"' junit.xml | head -1 | sed 's/failures="//;s/"//')
+              ERRORS=$(grep -o 'errors="[^"]*"' junit.xml | head -1 | sed 's/errors="//;s/"//')
+              TIME=$(grep -o 'time="[^"]*"' junit.xml | head -1 | sed 's/time="//;s/"//')
+              
+              echo "| Tests | ${TESTS:-0} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Failures | ${FAILURES:-0} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Errors | ${ERRORS:-0} |" >> $GITHUB_STEP_SUMMARY
+              echo "| Time | ${TIME:-0}s |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "Could not parse junit.xml" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "No test results found" >> $GITHUB_STEP_SUMMARY
           fi
           
       - name: Upload Python test artifacts
@@ -322,12 +329,22 @@ except Exception as e:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Create .env file
+      - name: Create .env file for testing
         run: |
           cp .env.example .env
-          sed -i 's/your_actual_api_key_here/test_api_key/g' .env
-          sed -i 's/your_actual_org_id_here/test_org_id/g' .env
-          sed -i 's/your_actual_project_id_here/test_project_id/g' .env
+          # Set test values for Magic Agent Sandbox / agtsdbx project
+          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=test_agtsdbx_api_key/g' .env
+          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=test_agtsdbx_org/g' .env
+          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=test_agtsdbx_project/g' .env
+          sed -i 's/APP_NAME=.*/APP_NAME=Magic-Agent-Sandbox-Test/g' .env
+          sed -i 's/APP_ENV=.*/APP_ENV=testing/g' .env
+          sed -i 's/APP_DEBUG=.*/APP_DEBUG=false/g' .env
+          sed -i 's/AGTSDBX_API_KEY=.*/AGTSDBX_API_KEY=test_backend_key/g' .env
+          sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key_for_ci_only/g' .env
+          sed -i 's/JWT_SECRET=.*/JWT_SECRET=test_jwt_secret_for_ci_only/g' .env
+          sed -i 's/API_KEYS=.*/API_KEYS=test_api_key_1,test_api_key_2/g' .env
+          sed -i 's/REDIS_PASSWORD=.*/REDIS_PASSWORD=/g' .env
+          sed -i 's/GRAFANA_PASSWORD=.*/GRAFANA_PASSWORD=test_admin/g' .env
           
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -367,18 +384,18 @@ except Exception as e:
       - name: Run Integration Test Suite
         if: steps.health-check.outputs.services_healthy == 'true'
         run: |
-          # Create comprehensive integration test script
+          # Create comprehensive integration test script for agtsdbx
           cat > run_integration_tests.sh << 'EOF'
           #!/bin/bash
           set -e
           
-          echo "🧪 Running Integration Tests"
-          echo "============================"
+          echo "🧪 Running Magic Agent Sandbox (agtsdbx) Integration Tests"
+          echo "========================================================="
           
           # Test API endpoints
-          echo "Testing API endpoints..."
+          echo "Testing agtsdbx API endpoints..."
           curl -f -X POST http://localhost:8000/api/v1/exec \
-            -H "Authorization: ApiKey test_api_key" \
+            -H "Authorization: ApiKey test_api_key_1" \
             -H "Content-Type: application/json" \
             -d '{"command": "echo test"}' || echo "API exec endpoint test failed"
           
@@ -386,25 +403,25 @@ except Exception as e:
           echo "Testing file operations..."
           TEST_FILE="/app/WORKDIR/test_$(date +%s).txt"
           curl -f -X POST http://localhost:8000/api/v1/file/write \
-            -H "Authorization: ApiKey test_api_key" \
+            -H "Authorization: ApiKey test_api_key_1" \
             -H "Content-Type: application/json" \
-            -d "{\"filePath\": \"$TEST_FILE\", \"content\": \"test\"}" || echo "File write test failed"
+            -d "{\"filePath\": \"$TEST_FILE\", \"content\": \"Magic Agent Sandbox test content\"}" || echo "File write test failed"
           
           # Run backend integration tests if they exist
           if docker exec agtsdbx-backend-dev test -d tests/Integration; then
-            echo "Running backend integration tests..."
+            echo "Running agtsdbx backend integration tests..."
             docker exec agtsdbx-backend-dev php vendor/bin/phpunit tests/Integration/ --log-junit=/tmp/integration-junit.xml || true
             docker cp agtsdbx-backend-dev:/tmp/integration-junit.xml ./backend-integration-junit.xml || true
           fi
           
           # Run frontend E2E tests if they exist
           if docker exec agtsdbx-frontend-dev test -f tests/test_e2e.py; then
-            echo "Running frontend E2E tests..."
+            echo "Running agtsdbx frontend E2E tests..."
             docker exec agtsdbx-frontend-dev python -m pytest tests/test_e2e.py -v --junitxml=/tmp/e2e-junit.xml || true
             docker cp agtsdbx-frontend-dev:/tmp/e2e-junit.xml ./frontend-e2e-junit.xml || true
           fi
           
-          echo "✅ Integration tests completed"
+          echo "✅ Magic Agent Sandbox integration tests completed"
           EOF
           
           chmod +x run_integration_tests.sh
@@ -413,7 +430,7 @@ except Exception as e:
       - name: Generate Integration Test Report
         if: always()
         run: |
-          echo "## 🔗 Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Magic Agent Sandbox Integration Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f backend-integration-junit.xml ] || [ -f frontend-e2e-junit.xml ]; then
             echo "✅ Integration tests executed" >> $GITHUB_STEP_SUMMARY
@@ -469,7 +486,7 @@ except Exception as e:
           
       - name: Create Security Report
         run: |
-          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔒 Security Scan Results for Magic Agent Sandbox" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Run Trivy again for summary
@@ -503,13 +520,12 @@ except Exception as e:
         uses: dependency-check/Dependency-Check_Action@main
         continue-on-error: true
         with:
-          project: 'agent-sandbox'
+          project: 'agtsdbx'
           path: '.'
           format: 'ALL'
           args: >
             --enableRetired
             --enableExperimental
-            --suppressionFile .depcheck-suppressions.xml
           
       - name: Upload security artifacts
         if: always()
@@ -532,7 +548,6 @@ except Exception as e:
       
       - name: Setup K6
         run: |
-          sudo gpg -k
           sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
@@ -541,9 +556,11 @@ except Exception as e:
       - name: Start services
         run: |
           cp .env.example .env
-          sed -i 's/your_actual_api_key_here/test_api_key/g' .env
-          sed -i 's/your_actual_org_id_here/test_org_id/g' .env
-          sed -i 's/your_actual_project_id_here/test_project_id/g' .env
+          # Set test values for agtsdbx
+          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=perf_test_key/g' .env
+          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=perf_test_org/g' .env
+          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=perf_test_project/g' .env
+          sed -i 's/API_KEYS=.*/API_KEYS=perf_test_api_key/g' .env
           docker compose up -d
           sleep 30
           
@@ -573,7 +590,7 @@ except Exception as e:
           export default function() {
             const responses = http.batch([
               ['GET', 'http://localhost:8000/health'],
-              ['GET', 'http://localhost:8000/api/v1/system/info', { headers: { 'Authorization': 'ApiKey test_api_key' }}],
+              ['GET', 'http://localhost:8000/api/v1/system/info', { headers: { 'Authorization': 'ApiKey perf_test_api_key' }}],
             ]);
             
             responses.forEach((res) => {
@@ -660,7 +677,7 @@ except Exception as e:
       - name: Create summary message
         id: message
         run: |
-          echo "summary=${{ steps.status.outputs.emoji }} CI Pipeline: ${{ steps.status.outputs.status }}" >> $GITHUB_OUTPUT
+          echo "summary=${{ steps.status.outputs.emoji }} Magic Agent Sandbox CI: ${{ steps.status.outputs.status }}" >> $GITHUB_OUTPUT
           
       - name: Send Slack notification
         if: vars.ENABLE_SLACK_NOTIFICATIONS == 'true'
@@ -672,7 +689,7 @@ except Exception as e:
               "text": "${{ steps.message.outputs.summary }}",
               "attachments": [{
                 "color": "${{ steps.status.outputs.color }}",
-                "text": "Repository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}"
+                "text": "Project: Magic Agent Sandbox (agtsdbx)\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}"
               }]
             }
         env:
@@ -684,8 +701,9 @@ except Exception as e:
         uses: Ilshidur/action-discord@0.3.2
         with:
           args: |
-            ${{ steps.status.outputs.emoji }} **CI Pipeline: ${{ steps.status.outputs.status }}**
+            ${{ steps.status.outputs.emoji }} **Magic Agent Sandbox CI: ${{ steps.status.outputs.status }}**
             
+            **Project:** Magic Agent Sandbox (agtsdbx)
             **Repository:** `${{ github.repository }}`
             **Branch:** `${{ github.ref_name }}`
             
@@ -703,11 +721,11 @@ except Exception as e:
           secure: true
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "${{ steps.status.outputs.emoji }} CI Pipeline ${{ steps.status.outputs.status }} - ${{ github.repository }}"
+          subject: "${{ steps.status.outputs.emoji }} Magic Agent Sandbox CI ${{ steps.status.outputs.status }} - ${{ github.repository }}"
           to: ${{ secrets.MAIL_TO }}
-          from: CI/CD Pipeline
+          from: Magic Agent Sandbox CI/CD
           body: |
-            CI Pipeline has completed with status: ${{ steps.status.outputs.status }}
+            Magic Agent Sandbox CI Pipeline has completed with status: ${{ steps.status.outputs.status }}
             
             Repository: ${{ github.repository }}
             Branch: ${{ github.ref_name }}
@@ -730,11 +748,12 @@ except Exception as e:
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `🚨 CI Pipeline Failed on main branch`,
-              body: `## CI Pipeline Failure
+              title: `🚨 Magic Agent Sandbox CI Failed on main branch`,
+              body: `## Magic Agent Sandbox CI Pipeline Failure
               
               The CI pipeline has failed on the main branch.
               
+              **Project:** Magic Agent Sandbox (agtsdbx)
               **Commit:** ${context.sha}
               **Run ID:** ${context.runId}
               **Triggered by:** ${context.actor}
@@ -748,7 +767,7 @@ except Exception as e:
               [View Full CI Run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
               
               Please investigate and fix the issue as soon as possible.`,
-              labels: ['bug', 'ci-failure', 'high-priority']
+              labels: ['bug', 'ci-failure', 'high-priority', 'agtsdbx']
             });
             
             console.log(`Created issue #${issue.data.number}`);
@@ -768,14 +787,14 @@ except Exception as e:
               sha: context.sha,
               state: state,
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: `CI Pipeline: ${status}`,
-              context: 'continuous-integration'
+              description: `Magic Agent Sandbox CI: ${status}`,
+              context: 'continuous-integration/agtsdbx'
             });
             
       - name: Generate final summary
         if: always()
         run: |
-          echo "# 📊 CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# 📊 Magic Agent Sandbox CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Overall Status: ${{ steps.status.outputs.emoji }} ${{ steps.status.outputs.status }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -786,7 +805,8 @@ except Exception as e:
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📝 Details" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Project Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project:** Magic Agent Sandbox (agtsdbx)" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
