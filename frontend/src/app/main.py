@@ -245,6 +245,7 @@ def run_app():
         port=int(os.getenv("PORT", 8080)),
         host=os.getenv("HOST", "0.0.0.0"),
         reload=os.getenv("DEBUG", "false").lower() == "true",
+        reconnect_timeout=agtsdbx_app.config.get("RECONNECT_TIMEOUT"),
         show=False,
         favicon="🔧"
     )
