@@ -7,13 +7,12 @@ use Agtsdbx\Utils\Logger;
 
 class SecurityManager
 {
-    private Config $config;
     private Logger $logger;
     private array $securityConfig;
 
     public function __construct(Config $config, Logger $logger = null)
     {
-        $this->config = $config;
+        // Remove unused $config property
         $this->logger = $logger ?? new Logger($config);
         $this->securityConfig = $config->get('security', []);
     }
@@ -248,6 +247,9 @@ class SecurityManager
 
         $ip = ip2long($ip);
         $subnet = ip2long($subnet);
+        
+        // Fix: Cast $bits to integer to ensure proper type
+        $bits = (int)$bits;
         $mask = -1 << (32 - $bits);
         
         return ($ip & $mask) === ($subnet & $mask);

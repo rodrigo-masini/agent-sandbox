@@ -45,6 +45,9 @@ abstract class BaseController
         }
     }
 
+    /**
+     * @param mixed $data
+     */
     protected function successResponse($data = null, string $message = 'Success'): array
     {
         return [

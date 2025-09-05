@@ -11,14 +11,17 @@ use Agtsdbx\Utils\Logger;
 class DockerService
 {
     private Config $config;
-    private Logger $logger;
     private ExecutionService $executor;
 
     public function __construct(Config $config, Logger $logger)
     {
         $this->config = $config;
-        $this->logger = $logger;
         $this->executor = new ExecutionService($config, $logger);
+        
+        // Use logger for initialization logging
+        $logger->info('DockerService initialized', [
+            'enabled' => $config->get('docker.enabled', true)
+        ]);
     }
 
     public function runContainer(string $image, string $command = '', array $options = []): array

@@ -6,3 +6,7 @@ parameters:
         - vendor
     checkMissingIterableValueType: false
     reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # Ignore certain third-party library issues if needed
+        - '#Property .* is never read, only written\.#'
+    treatPhpDocTypesAsCertain: false

@@ -7,11 +7,11 @@ use Agtsdbx\Utils\Logger;
 class Router
 {
     private array $routes = [];
-    private Logger $logger;
 
     public function __construct(Logger $logger)
     {
-        $this->logger = $logger;
+        // Use logger for initialization or remove parameter if not needed
+        $logger->debug('Router initialized');
     }
 
     public function get(string $path, string $handler): void

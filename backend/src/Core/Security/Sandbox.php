@@ -11,13 +11,11 @@ class Sandbox
 {
     private Config $config;
     private bool $enabled;
-    private array $restrictions;
 
     public function __construct(Config $config)
     {
         $this->config = $config;
         $this->enabled = $config->get('sandbox.enabled', true);
-        $this->restrictions = $this->loadRestrictions();
     }
 
     public function wrapCommand(string $command): string

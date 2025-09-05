@@ -6,18 +6,15 @@
 namespace Agtsdbx\Controllers;
 
 use Agtsdbx\Services\DatabaseService;
-use Agtsdbx\Core\Security\SecurityManager;
 
 class DatabaseController extends BaseController
 {
     private DatabaseService $databaseService;
-    private SecurityManager $security;
 
     public function __construct()
     {
         parent::__construct();
         $this->databaseService = new DatabaseService($this->config, $this->logger);
-        $this->security = new SecurityManager($this->config, $this->logger);
     }
 
     public function query(array $request): array
@@ -40,7 +37,7 @@ class DatabaseController extends BaseController
             $this->logger->info('Database query executed', [
                 'database' => $database,
                 'query_type' => 'SELECT',
-                'user' => $request['user'] ?? 'anonymous'
+                'user' => $request['user']['username'] ?? 'anonymous'
             ]);
             
             return $this->successResponse($result);
@@ -53,8 +50,8 @@ class DatabaseController extends BaseController
     public function execute(array $request): array
     {
         try {
-            // Check if user has permission
-            if (!isset($request['user']) || $request['user']['role'] !== 'admin') {
+            // Fix: Check if user exists before accessing role
+            if (!isset($request['user']) || !isset($request['user']['role']) || $request['user']['role'] !== 'admin') {
                 return $this->errorResponse('Admin access required', 403);
             }
             
@@ -70,7 +67,7 @@ class DatabaseController extends BaseController
             $this->logger->warning('Database execute operation', [
                 'database' => $database,
                 'query_type' => $this->getQueryType($query),
-                'user' => $request['user'] ?? 'anonymous'
+                'user' => $request['user']['username'] ?? 'anonymous'
             ]);
             
             return $this->successResponse($result);

@@ -11,13 +11,11 @@ use Agtsdbx\Core\Security\SecurityManager;
 class DockerController extends BaseController
 {
     private DockerService $dockerService;
-    private SecurityManager $security;
 
     public function __construct()
     {
         parent::__construct();
         $this->dockerService = new DockerService($this->config, $this->logger);
-        $this->security = new SecurityManager($this->config, $this->logger);
     }
 
     public function run(array $request): array

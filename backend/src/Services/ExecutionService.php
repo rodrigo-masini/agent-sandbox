@@ -8,16 +8,19 @@ use Agtsdbx\Core\Security\Sandbox;
 class ExecutionService
 {
     private Config $config;
-    private Logger $logger;
+    // Remove $logger property if not used, or use it for logging
     private Sandbox $sandbox;
     private string $workdir;
 
     public function __construct(Config $config, Logger $logger)
     {
         $this->config = $config;
-        $this->logger = $logger;
+        // Don't store logger if not using it
         $this->sandbox = new Sandbox($config);
         $this->workdir = $config->get('workdir', '/app/WORKDIR');
+        
+        // Log initialization
+        $logger->debug('ExecutionService initialized', ['workdir' => $this->workdir]);
     }
 
     public function execute(string $command, array $options = []): array
