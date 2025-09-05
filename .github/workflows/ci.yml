@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-# Grant necessary permissions for the workflow
 permissions:
   contents: read
   security-events: write
@@ -15,18 +14,22 @@ permissions:
   pull-requests: write
 
 jobs:
+  # PHP Backend Tests
   test-backend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.0', '8.1', '8.2']
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup PHP
+      - name: Setup PHP ${{ matrix.php-version }}
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
-          extensions: pdo, pdo_mysql, pdo_pgsql, redis, curl, json, opcache, mbstring, xml, zip
+          php-version: ${{ matrix.php-version }}
+          extensions: pdo, pdo_mysql, pdo_pgsql, redis, curl, json, opcache, mbstring, xml, zip, pcntl, posix
           coverage: xdebug
-          tools: composer:v2, phpstan, phpcs
+          tools: composer:v2, phpstan, phpcs, phpunit
           
       - name: Validate composer.json
         run: |
@@ -37,9 +40,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: backend/vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          key: ${{ runner.os }}-php-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
           restore-keys: |
-            ${{ runner.os }}-composer-
+            ${{ runner.os }}-php-${{ matrix.php-version }}-
           
       - name: Install dependencies
         run: |
@@ -51,27 +54,33 @@ jobs:
           cd backend
           find src -name "*.php" -exec php -l {} \;
           
+      - name: Run PHP CodeSniffer
+        run: |
+          cd backend
+          vendor/bin/phpcs --standard=PSR12 src/ || true
+          
       - name: Run PHPStan
         run: |
           cd backend
-          if [ -f phpstan.neon ]; then
-            vendor/bin/phpstan analyse --no-progress || true
-          fi
+          vendor/bin/phpstan analyse --no-progress
           
-      - name: Run tests
+      - name: Run Unit Tests with Coverage
         run: |
           cd backend
-          if [ -f vendor/bin/phpunit ]; then
-            vendor/bin/phpunit --coverage-text || true
-          else
-            echo "PHPUnit not installed, skipping tests"
-          fi
+          vendor/bin/phpunit --coverage-clover=coverage.xml --coverage-text
           
+      - name: Upload PHP Coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: backend/coverage.xml
+          flags: backend-php-${{ matrix.php-version }}
+          
+  # Python Frontend Tests
   test-frontend:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
       
@@ -84,9 +93,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements/*.txt') }}
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements/*.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
           
       - name: Install dependencies
         run: |
@@ -97,27 +106,40 @@ jobs:
       - name: Run linting
         run: |
           cd frontend
-          flake8 src --max-line-length=120 --extend-ignore=E203,W503 || true
+          flake8 src --max-line-length=120 --extend-ignore=E203,W503
           
       - name: Run type checking
         run: |
           cd frontend
-          mypy src --ignore-missing-imports || true
+          mypy src --ignore-missing-imports
           
-      - name: Run tests with coverage
+      - name: Run Security Check with Bandit
         run: |
           cd frontend
-          python -m pytest tests/ --cov=src --cov-report=term-missing -v || true
+          pip install bandit
+          bandit -r src/ -f json -o bandit-report.json || true
           
-  docker-build-and-test:
+      - name: Run Unit Tests with Coverage
+        run: |
+          cd frontend
+          python -m pytest tests/ --cov=src --cov-report=term-missing --cov-report=xml -v
+          
+      - name: Upload Python Coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: frontend/coverage.xml
+          flags: frontend-python-${{ matrix.python-version }}
+
+  # Integration Tests
+  integration-tests:
     runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
     steps:
       - uses: actions/checkout@v4
       
       - name: Create .env file
         run: |
           cp .env.example .env
-          # Set test values
           sed -i 's/your_actual_api_key_here/test_api_key/g' .env
           sed -i 's/your_actual_org_id_here/test_org_id/g' .env
           sed -i 's/your_actual_project_id_here/test_project_id/g' .env
@@ -125,71 +147,62 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
-      - name: Build backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/docker/Dockerfile
-          target: development
-          tags: agtsdbx-backend:test
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          
-      - name: Build frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          target: development
-          tags: agtsdbx-frontend:test
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build images
+        run: |
+          docker compose build --parallel
           
       - name: Start services
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+          docker compose up -d
           echo "Waiting for services to be ready..."
-          sleep 20
+          sleep 30
           
-      - name: Check container status
-        run: |
-          docker ps -a
-          docker compose logs --tail=50
-          
-      - name: Test backend health endpoint
+      - name: Check service health
         run: |
           max_attempts=10
           attempt=0
           while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:8000/health; then
-              echo "Backend is healthy"
+            if curl -f http://localhost:8000/health && curl -f http://localhost:8080/api/health; then
+              echo "Services are healthy"
               break
             fi
             echo "Attempt $((attempt + 1)) failed, retrying..."
-            sleep 3
+            sleep 5
             attempt=$((attempt + 1))
           done
           
-      - name: Test frontend health endpoint
+      - name: Run Backend Integration Tests
         run: |
-          max_attempts=10
-          attempt=0
-          while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:8080/api/health; then
-              echo "Frontend is healthy"
-              break
-            fi
-            echo "Attempt $((attempt + 1)) failed, retrying..."
-            sleep 3
-            attempt=$((attempt + 1))
-          done
+          docker exec agtsdbx-backend-dev php vendor/bin/phpunit tests/Integration/
           
-      - name: Run integration tests
+      - name: Run Frontend E2E Tests
         run: |
-          # Test basic API endpoints
-          curl -X POST http://localhost:8000/api/v1/system/info || true
+          docker exec agtsdbx-frontend-dev python -m pytest tests/test_e2e.py -v
+          
+      - name: Run Security Tests
+        run: |
+          docker exec agtsdbx-frontend-dev python -m pytest tests/security/ -v
+          
+      - name: Run Performance Tests
+        run: |
+          docker exec agtsdbx-frontend-dev python -m pytest tests/performance/ -v -m "not slow"
+          
+      - name: Test API Contract
+        run: |
+          # Test that frontend can communicate with backend
+          docker exec agtsdbx-frontend-dev python -c "
+import asyncio
+from src.clients.agtsdbx_client import AgtsdbxClient
+
+async def test():
+    client = AgtsdbxClient('http://agtsdbx:8000')
+    async with client:
+        result = await client.health_check()
+        assert result['status'] == 'healthy'
+        print('API contract test passed')
+
+asyncio.run(test())
+"
           
       - name: Collect logs on failure
         if: failure()
@@ -201,112 +214,108 @@ jobs:
         if: always()
         run: |
           docker compose down -v
-          
+
+  # Security Scanning
   security-scan:
     runs-on: ubuntu-latest
-    # Only run on main branch or if PR is labeled with 'security-scan'
-    if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'security-scan')
-    permissions:
-      contents: read
-      security-events: write
     steps:
       - uses: actions/checkout@v4
       
-      - name: Run Trivy vulnerability scanner - Filesystem
+      - name: Run Trivy on Repository
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'sarif'
-          output: 'trivy-fs-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'  # Don't fail the build
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
           
-      - name: Upload Trivy FS results
+      - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true  # Don't fail if upload fails
         with:
-          sarif_file: 'trivy-fs-results.sarif'
-          category: 'trivy-filesystem'
+          sarif_file: 'trivy-results.sarif'
           
-      - name: Build Docker image for scanning
-        run: |
-          docker build -t agtsdbx-scan:latest -f backend/docker/Dockerfile backend
-        continue-on-error: true
-          
-      - name: Run Trivy on Docker image
-        if: success()
-        uses: aquasecurity/trivy-action@master
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
         with:
-          image-ref: 'agtsdbx-scan:latest'
-          format: 'sarif'
-          output: 'trivy-image-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          config: auto
           
-      - name: Upload Docker scan results
-        if: success()
-        uses: github/codeql-action/upload-sarif@v3
-        continue-on-error: true
-        with:
-          sarif_file: 'trivy-image-results.sarif'
-          category: 'trivy-docker'
-          
-      - name: Run Dependency Check
+      - name: OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'agent-sandbox'
           path: '.'
           format: 'HTML'
-          args: >
-            --enableRetired
-            --enableExperimental
         continue-on-error: true
-          
-      - name: Upload Dependency Check results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: dependency-check-report
-          path: reports/
-          
-  code-quality:
+
+  # Load Testing
+  load-test:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [integration-tests]
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for better analysis
-          
-      - name: SonarCloud Scan
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: SonarSource/sonarcloud-github-action@master
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=agent-sandbox
-            -Dsonar.organization=${{ github.repository_owner }}
-            
-      - name: Check code with CodeQL
-        if: github.event_name == 'pull_request'
-        uses: github/codeql-action/analyze@v3
-        continue-on-error: true
-          
-  notify-status:
-    needs: [test-backend, test-frontend, docker-build-and-test]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Check build status
+      
+      - name: Setup K6
         run: |
-          if [ "${{ needs.test-backend.result }}" == "failure" ] || \
-             [ "${{ needs.test-frontend.result }}" == "failure" ] || \
-             [ "${{ needs.docker-build-and-test.result }}" == "failure" ]; then
-            echo "Build failed!"
-            exit 1
-          else
-            echo "Build succeeded!"
-          fi
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+          
+      - name: Create load test script
+        run: |
+          cat > load-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          
+          export let options = {
+            stages: [
+              { duration: '30s', target: 20 },
+              { duration: '1m', target: 20 },
+              { duration: '30s', target: 0 },
+            ],
+            thresholds: {
+              http_req_duration: ['p(95)<500'],
+              http_req_failed: ['rate<0.1'],
+            },
+          };
+          
+          export default function() {
+            let response = http.get('http://localhost:8000/health');
+            check(response, {
+              'status is 200': (r) => r.status === 200,
+              'response time < 500ms': (r) => r.timings.duration < 500,
+            });
+            sleep(1);
+          }
+          EOF
+          
+      - name: Start services for load test
+        run: |
+          cp .env.example .env
+          docker compose up -d
+          sleep 30
+          
+      - name: Run load test
+        run: |
+          k6 run load-test.js --out json=load-test-results.json
+          
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: load-test-results.json
+          
+      - name: Clean up
+        if: always()
+        run: |
+          docker compose down -v
+
+  # All tests must pass
+  tests-passed:
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend, integration-tests, security-scan]
+    steps:
+      - name: All tests passed
+        run: echo "✅ All tests passed successfully!"
