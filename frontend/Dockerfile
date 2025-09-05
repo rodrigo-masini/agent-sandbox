@@ -45,7 +45,6 @@ COPY templates /app/templates
 # Set Python path
 ENV PYTHONPATH=/app
 
-# Create consistent user
 RUN useradd -m -u 1000 agtsdbx && chown -R agtsdbx:agtsdbx /app
 USER agtsdbx
 
@@ -56,4 +55,6 @@ EXPOSE 8080
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
-CMD ["python", "-O", "-m", "src.app.main"]
+
+# Direct execution
+CMD ["python", "-O", "/app/src/app/main.py"]

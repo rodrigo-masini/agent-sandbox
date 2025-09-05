@@ -444,71 +444,73 @@ jobs:
           
       - name: Wait for services to be healthy
         id: health-check
+        timeout-minutes: 3
         run: |
           max_attempts=30
           attempt=0
           
           while [ $attempt -lt $max_attempts ]; do
-            echo ""
-            echo "Health check attempt $((attempt + 1))/$max_attempts"
-            
-            # Check backend
-            backend_healthy=false
-            if curl -f -s http://localhost:8000/health > /dev/null 2>&1; then
-              echo "✓ Backend is healthy"
-              backend_healthy=true
-            else
-              echo "✗ Backend not ready"
-              # Show last 5 lines of backend logs
-              docker logs --tail 5 agtsdbx-backend-dev 2>&1 || true
-            fi
-            
-            # Check frontend
-            frontend_healthy=false
-            if curl -f -s http://localhost:8080/api/health > /dev/null 2>&1; then
-              echo "✓ Frontend is healthy"
-              frontend_healthy=true
-            else
-              echo "✗ Frontend not ready"
-              # Show last 5 lines of frontend logs
-              docker logs --tail 5 agtsdbx-frontend-dev 2>&1 || true
-            fi
-            
-            # Both healthy?
-            if [ "$backend_healthy" = true ] && [ "$frontend_healthy" = true ]; then
+                echo ""
+                echo "Health check attempt $((attempt + 1))/$max_attempts"
+                
+                # Check backend with timeout
+                backend_healthy=false
+                if timeout 5 curl -f -s http://localhost:8000/health > /dev/null 2>&1; then
+                  echo "✓ Backend is healthy"
+                  backend_healthy=true
+                else
+                  echo "✗ Backend not ready"
+                  # Show last 10 lines of backend logs for debugging
+                  docker logs --tail 10 agtsdbx-backend-dev 2>&1 || true
+                fi
+                
+                # Check frontend with timeout
+                frontend_healthy=false
+                if timeout 5 curl -f -s http://localhost:8080/api/health > /dev/null 2>&1; then
+                  echo "✓ Frontend is healthy"
+                  frontend_healthy=true
+                else
+                  echo "✗ Frontend not ready"
+                  # Show last 10 lines of frontend logs
+                  docker logs --tail 10 agtsdbx-frontend-dev 2>&1 || true
+                fi
+                
+                # Both healthy?
+                if [ "$backend_healthy" = true ] && [ "$frontend_healthy" = true ]; then
+                  echo ""
+                  echo "✅ All services are healthy!"
+                  echo "services_healthy=true" >> $GITHUB_OUTPUT
+                  exit 0
+                fi
+                
+                # Don't wait too long between attempts
+                sleep 5
+                attempt=$((attempt + 1))
+              done
+              
+              # If we get here, services failed to become healthy
               echo ""
-              echo "✅ All services are healthy!"
-              echo "services_healthy=true" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            
-            sleep 5
-            attempt=$((attempt + 1))
-          done
-          
-          # If we get here, services failed to become healthy
-          echo ""
-          echo "❌ Services failed to become healthy after $max_attempts attempts"
-          echo ""
-          echo "=== DEBUGGING INFORMATION ==="
-          echo ""
-          echo "=== Docker PS ==="
-          docker ps -a
-          echo ""
-          echo "=== Backend Logs (Full) ==="
-          docker logs agtsdbx-backend-dev
-          echo ""
-          echo "=== Frontend Logs (Full) ==="
-          docker logs agtsdbx-frontend-dev
-          echo ""
-          echo "=== Backend vendor directory ==="
-          docker exec agtsdbx-backend-dev ls -la /app/vendor/ || echo "vendor not found"
-          echo ""
-          echo "=== Frontend installed packages ==="
-          docker exec agtsdbx-frontend-dev pip list || echo "pip list failed"
-          
-          echo "services_healthy=false" >> $GITHUB_OUTPUT
-          exit 1
+              echo "❌ Services failed to become healthy after $max_attempts attempts"
+              echo ""
+              echo "=== DEBUGGING INFORMATION ==="
+              echo ""
+              echo "=== Docker PS ==="
+              docker ps -a
+              echo ""
+              echo "=== Backend Logs (Last 50 lines) ==="
+              docker logs --tail 50 agtsdbx-backend-dev || echo "Could not retrieve backend logs"
+              echo ""
+              echo "=== Frontend Logs (Last 50 lines) ==="
+              docker logs --tail 50 agtsdbx-frontend-dev || echo "Could not retrieve frontend logs"
+              echo ""
+              echo "=== Backend Health Check Test ==="
+              curl -v http://localhost:8000/health || echo "Health check failed"
+              echo ""
+              echo "=== Docker Inspect Backend ==="
+              docker inspect agtsdbx-backend-dev | jq '.[0].State' || echo "Could not inspect container"
+              
+              echo "services_healthy=false" >> $GITHUB_OUTPUT
+              exit 1
 
   # Security Scanning
   security-scan:
