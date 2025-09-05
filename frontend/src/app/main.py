@@ -240,21 +240,21 @@ async def health_endpoint():
 
 def run_app():
     """Run the application."""
-    # This configuration is the correct, documented method for the updated NiceGUI version.
-    socket_io_config = {
-        "ping_interval": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5),
-        "ping_timeout": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 2
+    # Configure ui.run parameters based on NiceGUI version
+    run_params = {
+        "title": "Agent Sandbox - AI-Powered System Interface",
+        "port": agtsdbx_app.config.get("PORT"),
+        "host": agtsdbx_app.config.get("HOST"),
+        "reload": agtsdbx_app.config.get("DEBUG"),
+        "show": False,
+        "favicon": "🔧"
     }
-
-    ui.run(
-        title="Agent Sandbox - AI-Powered System Interface",
-        port=agtsdbx_app.config.get("PORT"),
-        host=agtsdbx_app.config.get("HOST"),
-        reload=agtsdbx_app.config.get("DEBUG"),
-        socket_io_server_kwargs=socket_io_config,
-        show=False,
-        favicon="🔧"
-    )
+    
+    # Try to set socket.io configuration if supported
+    # NiceGUI 1.4.20 doesn't support socket_io_server_kwargs
+    # This can be added back when upgrading to a newer version
+    
+    ui.run(**run_params)
 
 if __name__ == "__main__":
     run_app()
