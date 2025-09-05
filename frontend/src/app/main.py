@@ -240,7 +240,7 @@ async def health_endpoint():
 
 def run_app():
     """Run the application."""
-    # This configuration is correct for the updated NiceGUI version.
+    # This configuration is the correct, documented method for the updated NiceGUI version.
     socket_io_config = {
         "ping_interval": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5),
         "ping_timeout": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 2

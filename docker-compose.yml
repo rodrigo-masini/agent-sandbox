@@ -27,6 +27,11 @@ services:
       - LOG_LEVEL=debug
     env_file:
       - .env
+    depends_on:
+      redis:
+        condition: service_healthy # This is the fix
+      postgres:
+        condition: service_healthy # This is the fix
     networks:
       - agtsdbx_network
 
@@ -65,6 +70,11 @@ services:
       - redis_data:/data
     networks:
       - agtsdbx_network
+    healthcheck: # This is the fix
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   postgres:
     image: postgres:15
@@ -79,6 +89,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - agtsdbx_network
+    healthcheck: # This is the fix
+      test: ["CMD-SHELL", "pg_isready -U agtsdbx -d agtsdbx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   agtsdbx_workdir:
