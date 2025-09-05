@@ -240,11 +240,10 @@ async def health_endpoint():
 
 def run_app():
     """Run the application."""
-    # This is the correct, documented way to configure the underlying Socket.IO server.
-    # We directly set the ping interval and timeout to ensure stable connections.
+    # This configuration is correct for the updated NiceGUI version.
     socket_io_config = {
-        "ping_interval": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 0.8,
-        "ping_timeout": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 0.4
+        "ping_interval": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5),
+        "ping_timeout": agtsdbx_app.config.get("RECONNECT_TIMEOUT", 5) * 2
     }
 
     ui.run(
@@ -252,7 +251,7 @@ def run_app():
         port=agtsdbx_app.config.get("PORT"),
         host=agtsdbx_app.config.get("HOST"),
         reload=agtsdbx_app.config.get("DEBUG"),
-        socket_io_server_kwargs=socket_io_config,  # <-- THE CORRECT FIX IS HERE
+        socket_io_server_kwargs=socket_io_config,
         show=False,
         favicon="🔧"
     )

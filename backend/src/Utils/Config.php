@@ -7,6 +7,7 @@ namespace Agtsdbx\Utils;
 
 class Config
 {
+    private static ?Config $instance = null;
     private array $config = [];
 
     public function __construct(string $configPath = null)
