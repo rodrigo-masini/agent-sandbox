@@ -15,7 +15,10 @@ services:
       # Override to use GitHub Actions services if needed
       - DATABASE_URL=postgresql://agtsdbx:agtsdbx_dev_password@postgres:5432/agtsdbx
       - REDIS_HOST=redis
-  
-  frontend:
-    environment:
-      - AGTSDBX_BASE_URL=http://agtsdbx:8000
+    volumes: # ADD THIS BLOCK TO FIX THE HEALTHCHECK
+      - agtsdbx_workdir_ci:/app/WORKDIR
+      - agtsdbx_storage_ci:/app/storage
+
+volumes: # ADD THIS BLOCK
+  agtsdbx_workdir_ci:
+  agtsdbx_storage_ci:

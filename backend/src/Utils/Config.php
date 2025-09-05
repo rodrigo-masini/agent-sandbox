@@ -78,7 +78,7 @@ class Config
         }
     }
 
-    public function get(string $key, $default = null)
+    public function get(string $key, mixed $default = null): mixed // ADD TYPES
     {
         $keys = explode('.', $key);
         $value = $this->config;
@@ -93,7 +93,7 @@ class Config
         return $value;
     }
 
-    public function set(string $key, $value): void
+    public function set(string $key, mixed $value): void // ADD TYPE
     {
         $keys = explode('.', $key);
         $config = &$this->config;

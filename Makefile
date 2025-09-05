@@ -38,8 +38,8 @@ prod:
 
 test:
 	@echo "Running tests..."
-	@if [ -f backend/vendor/bin/phpunit ]; then cd backend && vendor/bin/phpunit; fi
-	@if [ -f frontend/tests ]; then cd frontend && python -m pytest tests/; fi
+	@if [ -f backend/vendor/bin/phpunit ]; then (cd backend && vendor/bin/phpunit); fi
+	@if [ -d frontend/tests ]; then (cd frontend && python3 -m pytest tests/); fi
 
 clean:
 	@echo "Cleaning up..."

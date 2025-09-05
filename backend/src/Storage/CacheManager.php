@@ -79,12 +79,14 @@ class CacheManager
         if ($this->redis) {
             $prefixedKey = $this->prefixKey($key);
             $result = $this->redis->incrBy($prefixedKey, $value);
-            
-            if ($ttl !== null && $result == $value) {
+
+            // FIX: Check if the result is not false before comparing
+            if ($result !== false && $ttl !== null && $result == $value) {
                 $this->redis->expire($prefixedKey, $ttl);
             }
             
-            return $result;
+            // FIX: Return the integer result or 0 on failure
+            return $result === false ? 0 : $result;
         }
         
         // File-based increment (not atomic)
@@ -100,7 +102,9 @@ class CacheManager
         $success = true;
         
         if ($this->redis) {
-            $success = $this->redis->del($this->prefixKey($key)) > 0;
+            $deletedCount = $this->redis->del($this->prefixKey($key));
+            // FIX: Check if the result is not false before comparing
+            $success = is_int($deletedCount) && $deletedCount > 0;
         }
         
         $file = $this->getCacheFile($key);
