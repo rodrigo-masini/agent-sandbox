@@ -120,16 +120,4 @@ class Sandbox
         exec('which docker 2>/dev/null', $output, $returnCode);
         return $returnCode === 0;
     }
-
-    private function loadRestrictions(): array
-    {
-        return [
-            'max_execution_time' => $this->config->get('sandbox.max_execution_time', 300),
-            'max_memory' => $this->config->get('sandbox.max_memory', 536870912), // 512MB
-            'max_file_size' => $this->config->get('sandbox.max_file_size', 104857600), // 100MB
-            'max_processes' => $this->config->get('sandbox.max_processes', 32),
-            'max_open_files' => $this->config->get('sandbox.max_open_files', 256),
-            'allow_network' => $this->config->get('sandbox.allow_network', false)
-        ];
-    }
 }

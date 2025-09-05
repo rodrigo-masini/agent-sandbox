@@ -10,7 +10,7 @@ use Agtsdbx\Utils\Config;
 class CacheManager
 {
     private Config $config;
-    private $redis = null;
+    private ?\Redis $redis = null;
     private string $cacheDir;
     private int $defaultTtl;
 
@@ -24,7 +24,7 @@ class CacheManager
         $this->ensureCacheDirectory();
     }
 
-    public function get(string $key, $default = null)
+    public function get(string $key, $default = null): mixed 
     {
         // Try Redis first
         if ($this->redis) {
@@ -179,7 +179,7 @@ class CacheManager
         return serialize($value);
     }
 
-    private function unserialize(string $value)
+    private function unserialize(string $value): mixed 
     {
         return unserialize($value);
     }

@@ -1,5 +1,17 @@
 <?php
 
+// Helper function to read environment variables with type casting
+function get_env(string $key, $default = null) {
+    $value = $_ENV[$key] ?? $default;
+    if (is_bool($default)) {
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+    if (is_int($default)) {
+        return (int) $value;
+    }
+    return $value;
+}
+
 return [
     // Authentication settings
     'auth' => [
@@ -19,8 +31,8 @@ return [
 
     // Command security
     'commands' => [
-        'whitelist_enabled' => env('COMMAND_WHITELIST_ENABLED', false),
-        'blacklist_enabled' => env('COMMAND_BLACKLIST_ENABLED', true),
+        'whitelist_enabled' => get_env('COMMAND_WHITELIST_ENABLED', false),
+        'blacklist_enabled' => get_env('COMMAND_BLACKLIST_ENABLED', true),
         'whitelist' => [
             'ls', 'cat', 'echo', 'pwd', 'whoami', 'date', 'uptime',
             'ps', 'top', 'df', 'du', 'free', 'uname',
@@ -36,22 +48,22 @@ return [
             'nc -l', 'netcat -l', 'socat',
             '> /dev/', '< /dev/', '| dd', '| tee /dev/'
         ],
-        'max_length' => env('COMMAND_MAX_LENGTH', 1000),
-        'timeout' => env('COMMAND_TIMEOUT', 300),
+        'max_length' => get_env('COMMAND_MAX_LENGTH', 1000),
+        'timeout' => get_env('COMMAND_TIMEOUT', 300),
     ],
 
     // File system security
     'filesystem' => [
         'allowed_paths' => [
             '/app/WORKDIR',
-            '/tmp/pandora',
+            '/tmp/agtsdbx', // Standardized name
         ],
         'forbidden_paths' => [
             '/', '/etc', '/usr', '/var', '/bin', '/sbin',
             '/boot', '/dev', '/proc', '/sys', '/root',
             '/home', '..', '../'
         ],
-        'max_file_size' => env('MAX_FILE_SIZE', 10485760), // 10MB
+        'max_file_size' => get_env('MAX_FILE_SIZE', 10485760), // 10MB
         'allowed_extensions' => [
             'txt', 'md', 'json', 'yaml', 'yml', 'xml',
             'py', 'js', 'ts', 'php', 'java', 'c', 'cpp',
@@ -76,13 +88,13 @@ return [
             '172.16.0.0/12',
             '192.168.0.0/16',
         ],
-        'max_request_size' => env('MAX_REQUEST_SIZE', 1048576), // 1MB
-        'timeout' => env('NETWORK_TIMEOUT', 30),
+        'max_request_size' => get_env('MAX_REQUEST_SIZE', 1048576), // 1MB
+        'timeout' => get_env('NETWORK_TIMEOUT', 30),
     ],
 
     // Docker security
     'docker' => [
-        'enabled' => env('DOCKER_ENABLED', true),
+        'enabled' => get_env('DOCKER_ENABLED', true),
         'allowed_images' => [
             'python:3.11-slim',
             'node:18-alpine',
@@ -103,9 +115,9 @@ return [
 
     // Logging and monitoring
     'logging' => [
-        'log_commands' => env('LOG_COMMANDS', true),
-        'log_file_access' => env('LOG_FILE_ACCESS', true),
-        'log_network_requests' => env('LOG_NETWORK_REQUESTS', true),
+        'log_commands' => get_env('LOG_COMMANDS', true),
+        'log_file_access' => get_env('LOG_FILE_ACCESS', true),
+        'log_network_requests' => get_env('LOG_NETWORK_REQUESTS', true),
         'sensitive_patterns' => [
             '/password/i',
             '/secret/i',
@@ -118,6 +130,6 @@ return [
     // Encryption
     'encryption' => [
         'algorithm' => 'AES-256-GCM',
-        'key' => env('ENCRYPTION_KEY'),
+        'key' => get_env('ENCRYPTION_KEY'),
     ],
 ];

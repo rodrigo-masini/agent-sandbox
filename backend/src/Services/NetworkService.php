@@ -27,7 +27,7 @@ class NetworkService
         string $url, 
         string $method = 'GET', 
         array $headers = [], 
-        $body = null, 
+        mixed $body = null,
         array $options = []
     ): array {
         $timeout = $options['timeout'] ?? $this->timeout;

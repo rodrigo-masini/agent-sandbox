@@ -7,20 +7,21 @@ namespace Agtsdbx\Services;
 
 use Agtsdbx\Utils\Config;
 use Agtsdbx\Utils\Logger;
-use Agtsdbx\Core\Storage\FileManager;
+// CORRECT THE NAMESPACE HERE
+use Agtsdbx\Storage\FileManager;
 
 class FileService
 {
     private Config $config;
     private Logger $logger;
-    private FileManager $fileManager;
+    private FileManager $fileManager; // This type hint is now correct
     private string $workdir;
 
     public function __construct(Config $config, Logger $logger)
     {
         $this->config = $config;
         $this->logger = $logger;
-        $this->fileManager = new FileManager($config);
+        $this->fileManager = new FileManager($config); // This instantiation is now correct
         $this->workdir = $config->get('workdir', '/app/WORKDIR');
     }
 
