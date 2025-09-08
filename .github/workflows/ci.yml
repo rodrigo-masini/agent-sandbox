@@ -161,7 +161,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 📦 Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: setup-artifacts
 
@@ -218,7 +218,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 📦 Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: setup-artifacts
 
@@ -273,7 +273,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 📦 Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: setup-artifacts
 
@@ -330,7 +330,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 📦 Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: setup-artifacts
 
