@@ -212,6 +212,7 @@ jobs:
     name: 🐍 Python Tests
     runs-on: ubuntu-latest
     needs: setup
+    timeout-minutes: 10  # Add job timeout
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -233,16 +234,21 @@ jobs:
           cd frontend
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements/dev.txt
+          pip install pytest-timeout  # Add timeout plugin
 
-      - name: 🧪 Run pytest
+      - name: 🧪 Run pytest with timeout
         run: |
           cd frontend
-          python -m pytest tests/ -v --tb=short --color=yes || true
-
-      - name: 🔍 Run flake8 linting
-        run: |
-          cd frontend
-          flake8 src/ --max-line-length=120 --ignore=E402,W503 || true
+          # Run with timeout and exit on first failure
+          python -m pytest tests/ \
+            -v \
+            --tb=short \
+            --color=yes \
+            --timeout=30 \
+            --timeout-method=thread \
+            -x \
+            --maxfail=1
+        timeout-minutes: 5  # Step timeout
 
   # ============================================
   # DOCKER BUILD
