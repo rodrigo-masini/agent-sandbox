@@ -1,3 +1,5 @@
+# FILE: frontend/Dockerfile
+
 FROM python:3.11-slim AS base
 
 RUN apt-get update && apt-get install -y \
@@ -12,7 +14,7 @@ WORKDIR /app
 FROM base AS development
 
 # Copy requirements directory first
-COPY requirements /app/requirements
+COPY requirements/ /app/requirements/
 
 # Install dev requirements
 RUN pip install --no-cache-dir -r requirements/dev.txt
@@ -32,15 +34,15 @@ CMD ["python", "-m", "src.app.main"]
 FROM base AS production
 
 # Copy requirements directory first  
-COPY requirements /app/requirements
+COPY requirements/ /app/requirements/
 
 # Install prod requirements
 RUN pip install --no-cache-dir -r requirements/prod.txt
 
 # Copy only necessary directories for production
-COPY src /app/src
-COPY static /app/static
-COPY templates /app/templates
+COPY src/ /app/src/
+COPY static/ /app/static/
+COPY templates/ /app/templates/
 
 # Set Python path
 ENV PYTHONPATH=/app
@@ -56,5 +58,5 @@ EXPOSE 8080
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
 
-# Direct execution
-CMD ["python", "-O", "/app/src/app/main.py"]
+# Use module execution for consistency
+CMD ["python", "-O", "-m", "src.app.main"]
