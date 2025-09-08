@@ -334,6 +334,42 @@ jobs:
         with:
           name: setup-artifacts
 
+      - name: 📁 Restore environment file
+        run: |
+          echo "Restoring .env file to project root..."
+          if [ -f .env ]; then
+            echo "✅ .env already in root"
+          elif [ -f setup-artifacts/.env ]; then
+            mv setup-artifacts/.env .env
+            echo "✅ Moved .env from setup-artifacts"
+          else
+            # Create a minimal .env if not found
+            cat > .env << 'EOF'
+          APP_ENV=test
+          APP_DEBUG=true
+          LOG_LEVEL=debug
+          FABRIC_API_KEY=test_api_key
+          FABRIC_ORG_ID=test_org_id
+          FABRIC_PROJECT_ID=test_project_id
+          FABRIC_BASE_URL=https://api.test.com
+          AGTSDBX_BASE_URL=http://localhost:8000
+          WORKDIR=/app/WORKDIR
+          SECRET_KEY=test_secret_key_32_chars_minimum
+          JWT_SECRET=test_jwt_secret_32_chars_minimum
+          API_KEYS=test_key_1,test_key_2
+          DATABASE_URL=sqlite:///app/storage/test.db
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          DOCKER_ENABLED=false
+          SANDBOX_ENABLED=false
+          RATE_LIMIT_ENABLED=false
+          EOF
+            echo "✅ Created new .env file"
+          fi
+          
+          # Verify .env exists
+          ls -la .env
+
       - name: 🚀 Start services
         run: |
           docker compose up -d

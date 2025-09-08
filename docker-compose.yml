@@ -1,4 +1,3 @@
-version: '3.9'
 
 x-common-variables: &common-variables
   APP_ENV: ${APP_ENV:-development}
