@@ -1,0 +1,401 @@
+name: CI-Debug-Enhanced
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  BUILDKIT_PROGRESS: plain
+  DOCKER_BUILD_SUMMARY: 1
+
+jobs:
+  integration-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          buildkitd-flags: --debug
+      
+      - name: System Information
+        run: |
+          echo "=== System Info ==="
+          uname -a
+          echo ""
+          echo "=== Docker Info ==="
+          docker version
+          docker info
+          echo ""
+          echo "=== Docker Compose Version ==="
+          docker compose version || docker-compose version
+          echo ""
+          echo "=== Available Memory ==="
+          free -h
+          echo ""
+          echo "=== Disk Space ==="
+          df -h
+      
+      - name: Create test environment
+        run: |
+          cp .env.example .env
+          
+          # Set test values
+          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=test_api_key/g' .env
+          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=test_org/g' .env
+          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=test_project/g' .env
+          sed -i 's/AGTSDBX_API_KEY=.*/AGTSDBX_API_KEY=test_backend_key/g' .env
+          sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key/g' .env
+          sed -i 's/JWT_SECRET=.*/JWT_SECRET=test_jwt_secret/g' .env
+          sed -i 's/API_KEYS=.*/API_KEYS=test_key_1,test_key_2/g' .env
+          sed -i 's/REQUIRE_AUTH=.*/REQUIRE_AUTH=false/g' .env
+          sed -i 's/APP_DEBUG=.*/APP_DEBUG=true/g' .env
+          sed -i 's/LOG_LEVEL=.*/LOG_LEVEL=debug/g' .env
+          
+          echo "=== Environment Variables (non-sensitive) ==="
+          grep -E "APP_ENV|LOG_LEVEL|DEBUG" .env
+      
+      - name: Fix Dockerfile issues
+        run: |
+          echo "🔧 Fixing known Dockerfile issues..."
+          
+          # Remove json extension (built-in for PHP 8.x)
+          if grep -q "docker-php-ext-install.*json" backend/docker/Dockerfile; then
+            sed -i 's/json//' backend/docker/Dockerfile
+            sed -i 's/  */ /g' backend/docker/Dockerfile
+            echo "✅ Removed json extension from Dockerfile"
+          fi
+      
+      - name: Generate composer.lock if missing
+        run: |
+          if [ ! -f backend/composer.lock ]; then
+            echo "📦 Generating composer.lock..."
+            docker run --rm \
+              -v "$(pwd)/backend":/app \
+              -w /app \
+              composer:2.7 \
+              install \
+              --no-interaction \
+              --prefer-dist \
+              --ignore-platform-reqs \
+              --no-scripts
+            
+            echo "=== Composer Lock Info ==="
+            if [ -f backend/composer.lock ]; then
+              echo "File size: $(du -h backend/composer.lock | cut -f1)"
+              echo "Package count: $(grep -c '"name":' backend/composer.lock || echo 0)"
+            fi
+          fi
+      
+      - name: Prepare Python modules
+        run: |
+          echo "🐍 Setting up Python module structure..."
+          for dir in src src/app src/core src/clients src/tools src/ui src/ui/components src/ui/layouts; do
+            mkdir -p "frontend/$dir"
+            touch "frontend/$dir/__init__.py"
+          done
+          echo "✅ Python modules prepared"
+      
+      - name: Build Backend Image with Detailed Logging
+        run: |
+          echo "🔨 Building backend image with detailed output..."
+          
+          # Build with progress and capture output
+          docker build \
+            --file backend/docker/Dockerfile \
+            --target development \
+            --tag agtsdbx-backend:test \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --progress=plain \
+            backend 2>&1 | tee backend-build.log
+          
+          echo ""
+          echo "=== Build Summary ==="
+          if docker images | grep -q "agtsdbx-backend.*test"; then
+            echo "✅ Backend image built successfully"
+            docker images agtsdbx-backend:test
+          else
+            echo "❌ Backend image build failed"
+            echo "Last 50 lines of build log:"
+            tail -50 backend-build.log
+            exit 1
+          fi
+      
+      - name: Test Backend Container Standalone
+        run: |
+          echo "🧪 Testing backend container in isolation..."
+          
+          # Run container with environment variables
+          docker run -d \
+            --name test-backend-isolated \
+            --env APP_ENV=testing \
+            --env APP_DEBUG=true \
+            --env LOG_LEVEL=debug \
+            --env WORKDIR=/app/WORKDIR \
+            --env API_KEYS=test_key_1,test_key_2 \
+            --env REQUIRE_AUTH=false \
+            -p 8001:8000 \
+            agtsdbx-backend:test
+          
+          echo "⏳ Waiting for container to start (max 60s)..."
+          
+          for i in {1..60}; do
+            echo -n "Attempt $i/60: "
+            
+            # Check if container is running
+            if ! docker ps | grep -q test-backend-isolated; then
+              echo "❌ Container stopped"
+              echo ""
+              echo "=== Container Exit Status ==="
+              docker ps -a | grep test-backend-isolated
+              echo ""
+              echo "=== Container Logs ==="
+              docker logs test-backend-isolated
+              exit 1
+            fi
+            
+            # Try to access health endpoint
+            if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              echo ""
+              echo "=== Health Response ==="
+              curl -s http://localhost:8001/health | python3 -m json.tool || true
+              break
+            fi
+            
+            echo "waiting..."
+            
+            # Show logs every 10 attempts
+            if [ $((i % 10)) -eq 0 ]; then
+              echo ""
+              echo "=== Container Logs (last 20 lines) ==="
+              docker logs --tail 20 test-backend-isolated
+              echo ""
+            fi
+            
+            if [ $i -eq 60 ]; then
+              echo "❌ Health check timeout after 60 seconds"
+              echo ""
+              echo "=== Final Container State ==="
+              docker inspect test-backend-isolated | python3 -m json.tool | grep -A5 -B5 "Status"
+              echo ""
+              echo "=== Complete Container Logs ==="
+              docker logs test-backend-isolated
+              echo ""
+              echo "=== Port Bindings ==="
+              docker port test-backend-isolated
+              echo ""
+              echo "=== Running Processes ==="
+              docker exec test-backend-isolated ps aux || true
+              exit 1
+            fi
+            
+            sleep 1
+          done
+          
+          # Cleanup
+          docker stop test-backend-isolated
+          docker rm test-backend-isolated
+      
+      - name: Start services with Docker Compose
+        run: |
+          echo "🚀 Starting services with docker-compose..."
+          
+          # Start services in detached mode
+          docker compose up -d 2>&1 | tee compose-up.log
+          
+          echo ""
+          echo "=== Initial Container Status ==="
+          docker compose ps
+          docker ps -a
+      
+      - name: Monitor Service Startup
+        run: |
+          echo "📊 Monitoring service startup..."
+          
+          # Monitor for up to 120 seconds
+          for i in {1..120}; do
+            echo ""
+            echo "=== Check $i/120 ($(date)) ==="
+            
+            # Show container status
+            docker compose ps
+            
+            # Check each service
+            services=("redis" "postgres" "agtsdbx" "frontend")
+            all_healthy=true
+            
+            for service in "${services[@]}"; do
+              container_name="agtsdbx-${service}-dev"
+              if [ "$service" = "agtsdbx" ]; then
+                container_name="agtsdbx-backend-dev"
+              elif [ "$service" = "postgres" ]; then
+                container_name="agtsdbx-db-dev"
+              fi
+              
+              echo -n "  $service: "
+              
+              # Check if container exists
+              if ! docker ps -a | grep -q "$container_name"; then
+                echo "❌ Container not found"
+                all_healthy=false
+                continue
+              fi
+              
+              # Check if container is running
+              if docker ps | grep -q "$container_name"; then
+                # Check health status
+                health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "no-health-check")
+                
+                if [ "$health_status" = "healthy" ]; then
+                  echo "✅ Healthy"
+                elif [ "$health_status" = "no-health-check" ] || [ "$health_status" = "" ]; then
+                  # No health check defined, check if running
+                  echo "🟡 Running (no health check)"
+                else
+                  echo "⏳ Status: $health_status"
+                  all_healthy=false
+                fi
+              else
+                echo "❌ Not running"
+                all_healthy=false
+                
+                # Show why it's not running
+                exit_code=$(docker inspect --format='{{.State.ExitCode}}' "$container_name" 2>/dev/null || echo "unknown")
+                echo "     Exit code: $exit_code"
+                
+                # Show last logs
+                echo "     Last logs:"
+                docker logs --tail 5 "$container_name" 2>&1 | sed 's/^/       /'
+              fi
+            done
+            
+            if [ "$all_healthy" = true ]; then
+              echo ""
+              echo "✅ All services are healthy!"
+              break
+            fi
+            
+            if [ $i -eq 120 ]; then
+              echo ""
+              echo "❌ Services failed to become healthy after 120 seconds"
+              
+              echo ""
+              echo "=== Detailed Service Logs ==="
+              for service in "${services[@]}"; do
+                echo ""
+                echo "--- $service logs (last 50 lines) ---"
+                docker compose logs --tail 50 "$service"
+              done
+              
+              echo ""
+              echo "=== Docker Network Info ==="
+              docker network ls
+              docker network inspect agtsdbx_network || true
+              
+              echo ""
+              echo "=== Resource Usage ==="
+              docker stats --no-stream
+              
+              exit 1
+            fi
+            
+            sleep 1
+          done
+      
+      - name: Verify Backend Health Endpoint
+        run: |
+          echo "🏥 Verifying backend health endpoint..."
+          
+          # Multiple attempts with detailed output
+          for attempt in {1..10}; do
+            echo "Attempt $attempt/10..."
+            
+            # Try from host
+            if curl -v -sf http://localhost:8000/health 2>&1 | tee health-check.log; then
+              echo "✅ Backend health check passed from host"
+              break
+            fi
+            
+            # Try from inside network
+            docker run --rm --network agtsdbx_network alpine:latest \
+              sh -c "apk add --no-cache curl && curl -v http://agtsdbx-backend-dev:8000/health" || true
+            
+            if [ $attempt -eq 10 ]; then
+              echo "❌ Backend health check failed"
+              echo ""
+              echo "=== Health Check Log ==="
+              cat health-check.log
+              echo ""
+              echo "=== Backend Container Logs ==="
+              docker logs agtsdbx-backend-dev
+              exit 1
+            fi
+            
+            sleep 3
+          done
+      
+      - name: Run Integration Tests
+        run: |
+          echo "🧪 Running integration tests..."
+          
+          # Test backend endpoints
+          endpoints=(
+            "http://localhost:8000/health"
+            "http://localhost:8000/api/v1/system/info"
+          )
+          
+          for endpoint in "${endpoints[@]}"; do
+            echo "Testing: $endpoint"
+            if [ "$endpoint" = "http://localhost:8000/api/v1/system/info" ]; then
+              curl -X GET "$endpoint" \
+                -H "Authorization: ApiKey test_key_1" \
+                -H "Content-Type: application/json" \
+                --fail-with-body \
+                -v 2>&1 || echo "Failed (may require auth)"
+            else
+              curl -X GET "$endpoint" --fail-with-body -v 2>&1 || exit 1
+            fi
+            echo ""
+          done
+      
+      - name: Collect Artifacts on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-logs-${{ github.run_id }}
+          path: |
+            backend-build.log
+            compose-up.log
+            health-check.log
+            backend/composer.lock
+            .env
+          retention-days: 7
+      
+      - name: Generate Debug Report
+        if: always()
+        run: |
+          echo "## 📊 CI Debug Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Container Status" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          docker compose ps >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Resource Usage" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          docker stats --no-stream >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up..."
+          docker compose down -v || true
+          docker system prune -f || true

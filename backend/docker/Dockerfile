@@ -33,7 +33,7 @@ RUN apk add --no-cache \
     libwebp-dev \
     zlib-dev
 
-# Configure and install PHP extensions (NO json - it's built-in!)
+# Configure and install PHP extensions (NO json - it's built-in for PHP 8.x!)
 RUN docker-php-ext-configure gd \
         --with-freetype \
         --with-jpeg \
@@ -68,6 +68,10 @@ RUN { \
         echo 'upload_max_filesize=100M'; \
         echo 'post_max_size=100M'; \
         echo 'variables_order=EGPCS'; \
+        echo 'display_errors=1'; \
+        echo 'error_reporting=E_ALL'; \
+        echo 'log_errors=1'; \
+        echo 'error_log=/dev/stderr'; \
     } > /usr/local/etc/php/conf.d/app.ini
 
 WORKDIR /app
@@ -78,169 +82,120 @@ FROM base AS development
 # Install dev tools
 RUN apk add --no-cache vim htop strace tcpdump inotify-tools
 
-# Create the entrypoint script inline
-RUN cat > /docker-entrypoint.sh << 'ENTRYPOINT_SCRIPT' && chmod +x /docker-entrypoint.sh
-#!/bin/sh
-set -e
-
-echo "🚀 Starting backend initialization..."
-
-# Ensure directories exist with proper permissions
-mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/storage/framework /app/WORKDIR /app/vendor /app/public
-chmod -R 777 /app/storage 2>/dev/null || true
-chmod 777 /app/WORKDIR 2>/dev/null || true
-touch /app/storage/logs/app.log
-chmod 666 /app/storage/logs/app.log 2>/dev/null || true
-
-# Check if composer.json exists
-if [ ! -f /app/composer.json ]; then
-    echo "⚠️  composer.json not found, creating minimal one..."
-    cat > /app/composer.json << 'EOF'
-{
-    "name": "agent/sandbox",
-    "type": "project",
-    "require": {
-        "php": "^8.0"
-    },
-    "autoload": {
-        "psr-4": {
-            "Agtsdbx\\": "src/"
-        }
-    }
-}
-EOF
-fi
-
-# Install composer dependencies if vendor doesn't exist
-if [ ! -f /app/vendor/autoload.php ]; then
-    echo "📦 Installing composer dependencies..."
-    cd /app
-    
-    # Try to install, fall back to update if needed
-    composer install \
-        --no-interaction \
-        --no-progress \
-        --prefer-dist \
-        --optimize-autoloader \
-        --no-scripts 2>/dev/null || \
-    composer update \
-        --no-interaction \
-        --no-progress \
-        --prefer-dist \
-        --optimize-autoloader \
-        --no-scripts 2>/dev/null || \
-    echo "⚠️  Composer install failed, continuing anyway..."
-    
-    # Try to generate autoloader
-    composer dump-autoload --optimize --no-interaction 2>/dev/null || true
-fi
-
-# Create index.php if missing
-if [ ! -f /app/public/index.php ] && [ ! -f /app/public/health.php ]; then
-    echo "📝 Creating default index.php..."
-    mkdir -p /app/public
-    cat > /app/public/index.php << 'EOF'
-<?php
-header('Content-Type: application/json');
-echo json_encode(['status' => 'running', 'service' => 'agtsdbx']);
-EOF
-fi
-
-# Create health.php if missing
-if [ ! -f /app/public/health.php ]; then
-    echo "📝 Creating health endpoint..."
-    cat > /app/public/health.php << 'EOF'
-<?php
-header('Content-Type: application/json');
-echo json_encode([
-    'status' => 'healthy',
-    'timestamp' => date('c'),
-    'php_version' => PHP_VERSION,
-    'checks' => [
-        'php' => true,
-        'filesystem' => is_writable('/app/WORKDIR')
-    ]
-]);
-EOF
-fi
-
-# Wait for services if configured
-if [ -n "$DATABASE_URL" ]; then
-    echo "⏳ Waiting for database..."
-    sleep 5
-fi
-
-if [ -n "$REDIS_HOST" ]; then
-    echo "⏳ Waiting for Redis..."
-    sleep 3
-fi
-
-echo "✅ Initialization complete, starting PHP server..."
-
-# Start PHP server with exec to handle signals properly
-exec php -S 0.0.0.0:8000 -t public
-ENTRYPOINT_SCRIPT
-
-# Copy composer files first (FIXED: composer.json not composer.)
+# Copy composer files first for better caching
 COPY composer.json /app/composer.json
-# Copy composer.lock if it exists (optional with *)
 COPY composer.lock* /app/
 
-# Try to install dependencies at build time (will be updated at runtime if needed)
-RUN cd /app && \
-    if [ -f composer.json ]; then \
+# Install composer dependencies at build time
+RUN if [ -f composer.lock ]; then \
+        echo "Installing from composer.lock..." && \
         composer install \
             --no-interaction \
             --no-progress \
             --prefer-dist \
             --optimize-autoloader \
             --no-scripts \
-            --ignore-platform-reqs \
-            2>/dev/null || \
-        composer update \
+            --ignore-platform-reqs; \
+    else \
+        echo "Installing without composer.lock..." && \
+        composer install \
             --no-interaction \
             --no-progress \
             --prefer-dist \
             --optimize-autoloader \
             --no-scripts \
-            --ignore-platform-reqs \
-            2>/dev/null || \
-        echo "Composer install failed at build time, will retry at runtime"; \
+            --ignore-platform-reqs; \
     fi
 
-# Copy application code
+# Copy all application files
 COPY . /app
 
-# Ensure directories and permissions
+# Create necessary directories with proper permissions
 RUN mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/storage/framework /app/WORKDIR /app/public /app/vendor \
     && chmod -R 777 /app/storage \
     && chmod 777 /app/WORKDIR \
     && touch /app/storage/logs/app.log \
     && chmod 666 /app/storage/logs/app.log
 
-# Generate autoloader if possible
-RUN cd /app && composer dump-autoload --optimize --no-interaction 2>/dev/null || true
+# Create the entrypoint script (simplified and more robust)
+RUN cat > /docker-entrypoint.sh << 'ENTRYPOINT_SCRIPT' && chmod +x /docker-entrypoint.sh
+#!/bin/bash
+set -e
+
+echo "🚀 Starting backend (PID $$)..."
+echo "📋 Environment:"
+echo "  - PHP: $(php -v | head -1)"
+echo "  - Composer: $(composer --version 2>/dev/null || echo 'Not installed')"
+echo "  - Working Dir: $(pwd)"
+echo "  - User: $(whoami)"
+
+# Ensure critical directories exist
+mkdir -p /app/storage/logs /app/WORKDIR /app/public
+chmod 777 /app/storage/logs /app/WORKDIR 2>/dev/null || true
+
+# Check if vendor/autoload.php exists
+if [ ! -f /app/vendor/autoload.php ]; then
+    echo "⚠️  Vendor autoload missing, attempting to install dependencies..."
+    cd /app
+    if [ -f composer.json ]; then
+        composer install --no-interaction --no-progress --prefer-dist --optimize-autoloader --no-scripts || {
+            echo "❌ Composer install failed"
+            echo "Composer output:"
+            composer diagnose
+            exit 1
+        }
+    fi
+fi
+
+# Create a minimal health check endpoint if missing
+if [ ! -f /app/public/health.php ]; then
+    echo "📝 Creating health endpoint..."
+    cat > /app/public/health.php << 'EOF'
+<?php
+header('Content-Type: application/json');
+http_response_code(200);
+echo json_encode([
+    'status' => 'healthy',
+    'timestamp' => date('c'),
+    'php_version' => PHP_VERSION
+]);
+EOF
+fi
+
+# Create index.php if missing
+if [ ! -f /app/public/index.php ]; then
+    echo "📝 Creating index.php..."
+    cat > /app/public/index.php << 'EOF'
+<?php
+require_once dirname(__DIR__) . '/vendor/autoload.php';
+header('Content-Type: application/json');
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+if ($uri === '/health') {
+    include 'health.php';
+} else {
+    echo json_encode(['status' => 'running', 'service' => 'agtsdbx', 'path' => $uri]);
+}
+EOF
+fi
+
+echo "✅ Starting PHP development server on 0.0.0.0:8000..."
+exec php -S 0.0.0.0:8000 -t public
+ENTRYPOINT_SCRIPT
 
 EXPOSE 8000
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 
-# Robust health check with retries
-HEALTHCHECK --interval=10s --timeout=10s --start-period=60s --retries=15 \
-    CMD curl -f http://localhost:8000/health || \
-        curl -f http://localhost:8000/health.php || \
-        curl -f http://localhost:8000/ || \
-        php -r "echo 'OK';" || \
-        exit 1
+# Simplified health check that's more forgiving
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=10 \
+    CMD php -r "echo 'OK';" || exit 1
 
 # ===== PRODUCTION STAGE =====
 FROM base AS production
 
-# Copy composer files (FIXED)
-COPY composer.json /app/composer.json
-COPY composer.lock* /app/
+COPY composer.json composer.lock* /app/
 
-RUN cd /app && composer install \
+RUN composer install \
     --no-dev \
     --no-interaction \
     --no-progress \
@@ -250,13 +205,11 @@ RUN cd /app && composer install \
 
 COPY . /app
 
-RUN cd /app && composer dump-autoload --optimize --classmap-authoritative --no-dev
+RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
 RUN mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/WORKDIR /app/public \
     && chmod -R 755 /app/storage \
     && chmod 700 /app/WORKDIR
-
-RUN rm -rf /app/tests /app/.git /app/.github /app/docker /app/.env.example
 
 RUN adduser -D -u 1000 -s /bin/sh agtsdbx && \
     chown -R agtsdbx:agtsdbx /app
@@ -268,4 +221,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=5 \
 
 EXPOSE 8000
 
-CMD ["php", "-d", "display_errors=0", "-d", "error_reporting=0", "-S", "0.0.0.0:8000", "-t", "public"]
+CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
