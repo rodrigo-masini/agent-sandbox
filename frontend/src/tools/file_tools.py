@@ -140,10 +140,10 @@ class FileTools(BaseTool):
             async with self.agtsdbx_client as client:
                 result = await client.write_file(file_path, content, options)
                 
-            if result.get("success"):
-                return f"Successfully wrote to file: {file_path}"
-            else:
-                return f"Failed to write file: {result.get('error', 'Unknown error')}"
+                if result.get("success"):
+                    return f"Successfully wrote to file: {file_path}"
+                else:
+                    return f"Failed to write file: {result.get('error', 'Unknown error')}"
                 
         except Exception as e:
             return f"Error writing file: {str(e)}"
@@ -159,10 +159,10 @@ class FileTools(BaseTool):
             async with self.agtsdbx_client as client:
                 result = await client.read_file(file_path, options)
                 
-            if result.get("success"):
-                return f"File contents of {file_path}:\n\n{result.get('content', '')}"
-            else:
-                return f"Failed to read file: {result.get('error', 'Unknown error')}"
+                if result.get("success"):
+                    return f"File contents of {file_path}:\n\n{result.get('content', '')}"
+                else:
+                    return f"Failed to read file: {result.get('error', 'Unknown error')}"
                 
         except Exception as e:
             return f"Error reading file: {str(e)}"
@@ -182,15 +182,15 @@ class FileTools(BaseTool):
             async with self.agtsdbx_client as client:
                 result = await client.list_files(path, options)
                 
-            if result.get("success"):
-                files = result.get("files", [])
-                if files:
-                    file_list = "\n".join([f"- {f}" for f in files])
-                    return f"Files in {path}:\n{file_list}"
+                if result.get("success"):
+                    files = result.get("files", [])
+                    if files:
+                        file_list = "\n".join([f"- {f}" for f in files])
+                        return f"Files in {path}:\n{file_list}"
+                    else:
+                        return f"No files found in {path}"
                 else:
-                    return f"No files found in {path}"
-            else:
-                return f"Failed to list files: {result.get('error', 'Unknown error')}"
+                    return f"Failed to list files: {result.get('error', 'Unknown error')}"
                 
         except Exception as e:
             return f"Error listing files: {str(e)}"
@@ -203,10 +203,10 @@ class FileTools(BaseTool):
             async with self.agtsdbx_client as client:
                 result = await client.delete_file(file_path)
                 
-            if result.get("success"):
-                return f"Successfully deleted: {file_path}"
-            else:
-                return f"Failed to delete file: {result.get('error', 'Unknown error')}"
+                if result.get("success"):
+                    return f"Successfully deleted: {file_path}"
+                else:
+                    return f"Failed to delete file: {result.get('error', 'Unknown error')}"
                 
         except Exception as e:
             return f"Error deleting file: {str(e)}"
@@ -222,10 +222,10 @@ class FileTools(BaseTool):
             async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
                 
-            if result.get("exit_code", 0) == 0:
-                return f"Successfully created directory: {path}"
-            else:
-                return f"Failed to create directory: {result.get('stderr', 'Unknown error')}"
+                if result.get("exit_code", 0) == 0:
+                    return f"Successfully created directory: {path}"
+                else:
+                    return f"Failed to create directory: {result.get('stderr', 'Unknown error')}"
                 
         except Exception as e:
             return f"Error creating directory: {str(e)}"
