@@ -208,6 +208,11 @@ class FileTools(BaseTool):
                 else:
                     return f"Failed to delete file: {result.get('error', 'Unknown error')}"
                 
+                if result.get("success"):
+                    return f"Successfully deleted: {file_path}"
+                else:
+                    return f"Failed to delete file: {result.get('error', 'Unknown error')}"
+                
         except Exception as e:
             return f"Error deleting file: {str(e)}"
     
