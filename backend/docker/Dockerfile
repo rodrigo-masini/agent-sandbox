@@ -117,72 +117,68 @@ RUN mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/sto
     && touch /app/storage/logs/app.log \
     && chmod 666 /app/storage/logs/app.log
 
-# Create the entrypoint script with proper heredoc syntax
-RUN cat > /docker-entrypoint.sh << 'ENTRYPOINT_SCRIPT'
-#!/bin/bash
-set -e
-
-echo "🚀 Starting backend (PID $$)..."
-echo "📋 Environment:"
-echo "  - PHP: $(php -v | head -1)"
-echo "  - Composer: $(composer --version 2>/dev/null || echo 'Not installed')"
-echo "  - Working Dir: $(pwd)"
-echo "  - User: $(whoami)"
-
-# Ensure critical directories exist
-mkdir -p /app/storage/logs /app/WORKDIR /app/public
-chmod 777 /app/storage/logs /app/WORKDIR 2>/dev/null || true
-
-# Check if vendor/autoload.php exists
-if [ ! -f /app/vendor/autoload.php ]; then
-    echo "⚠️  Vendor autoload missing, attempting to install dependencies..."
-    cd /app
-    if [ -f composer.json ]; then
-        composer install --no-interaction --no-progress --prefer-dist --optimize-autoloader --no-scripts || {
-            echo "❌ Composer install failed"
-            echo "Composer output:"
-            composer diagnose
-            exit 1
-        }
-    fi
-fi
-
-# Create a minimal health check endpoint if missing
-if [ ! -f /app/public/health.php ]; then
-    echo "📝 Creating health endpoint..."
-    cat > /app/public/health.php << 'EOF'
-<?php
-header('Content-Type: application/json');
-http_response_code(200);
-echo json_encode([
-    'status' => 'healthy',
-    'timestamp' => date('c'),
-    'php_version' => PHP_VERSION
-]);
-EOF
-fi
-
-# Create index.php if missing
-if [ ! -f /app/public/index.php ]; then
-    echo "📝 Creating index.php..."
-    cat > /app/public/index.php << 'EOF'
-<?php
-require_once dirname(__DIR__) . '/vendor/autoload.php';
-header('Content-Type: application/json');
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-if ($uri === '/health') {
-    include 'health.php';
-} else {
-    echo json_encode(['status' => 'running', 'service' => 'agtsdbx', 'path' => $uri]);
-}
-EOF
-fi
-
-echo "✅ Starting PHP development server on 0.0.0.0:8000..."
-exec php -S 0.0.0.0:8000 -t public
-ENTRYPOINT_SCRIPT
-
-RUN chmod +x /docker-entrypoint.sh
+# Create the entrypoint script using printf to avoid heredoc issues
+RUN printf '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "🚀 Starting backend (PID $$)..."\n\
+echo "📋 Environment:"\n\
+echo "  - PHP: $(php -v | head -1)"\n\
+echo "  - Composer: $(composer --version 2>/dev/null || echo \"Not installed\")"\n\
+echo "  - Working Dir: $(pwd)"\n\
+echo "  - User: $(whoami)"\n\
+\n\
+# Ensure critical directories exist\n\
+mkdir -p /app/storage/logs /app/WORKDIR /app/public\n\
+chmod 777 /app/storage/logs /app/WORKDIR 2>/dev/null || true\n\
+\n\
+# Check if vendor/autoload.php exists\n\
+if [ ! -f /app/vendor/autoload.php ]; then\n\
+    echo "⚠️  Vendor autoload missing, attempting to install dependencies..."\n\
+    cd /app\n\
+    if [ -f composer.json ]; then\n\
+        composer install --no-interaction --no-progress --prefer-dist --optimize-autoloader --no-scripts || {\n\
+            echo "❌ Composer install failed"\n\
+            echo "Composer output:"\n\
+            composer diagnose\n\
+            exit 1\n\
+        }\n\
+    fi\n\
+fi\n\
+\n\
+# Create a minimal health check endpoint if missing\n\
+if [ ! -f /app/public/health.php ]; then\n\
+    echo "📝 Creating health endpoint..."\n\
+    cat > /app/public/health.php << '\''EOF'\''\n\
+<?php\n\
+header("Content-Type: application/json");\n\
+http_response_code(200);\n\
+echo json_encode([\n\
+    "status" => "healthy",\n\
+    "timestamp" => date("c"),\n\
+    "php_version" => PHP_VERSION\n\
+]);\n\
+EOF\n\
+fi\n\
+\n\
+# Create index.php if missing\n\
+if [ ! -f /app/public/index.php ]; then\n\
+    echo "📝 Creating index.php..."\n\
+    cat > /app/public/index.php << '\''EOF'\''\n\
+<?php\n\
+require_once dirname(__DIR__) . "/vendor/autoload.php";\n\
+header("Content-Type: application/json");\n\
+$uri = parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH);\n\
+if ($uri === "/health") {\n\
+    include "health.php";\n\
+} else {\n\
+    echo json_encode(["status" => "running", "service" => "agtsdbx", "path" => $uri]);\n\
+}\n\
+EOF\n\
+fi\n\
+\n\
+echo "✅ Starting PHP development server on 0.0.0.0:8000..."\n\
+exec php -S 0.0.0.0:8000 -t public\n' > /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 EXPOSE 8000
 
