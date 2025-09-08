@@ -51,7 +51,7 @@ class DatabaseController extends BaseController
     {
         try {
             // Fix: Check if user exists before accessing role
-            if (!isset($request['user']) || !isset($request['user']['role']) || $request['user']['role'] !== 'admin') {
+            if (!isset($request['user']['role']) || $request['user']['role'] !== 'admin') {
                 return $this->errorResponse('Admin access required', 403);
             }
             

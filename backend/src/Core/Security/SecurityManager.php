@@ -257,7 +257,7 @@ class SecurityManager
         $subnet = ip2long($subnet);
         
         // Fix: Cast $bits to integer to ensure proper type
-        $bits = (int)$bits;
+        $bits = (int)$bits; // FIX: Cast $bits to integer
         $mask = -1 << (32 - $bits);
         
         return ($ip & $mask) === ($subnet & $mask);
