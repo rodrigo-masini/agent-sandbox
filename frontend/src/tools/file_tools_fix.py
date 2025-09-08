@@ -1,4 +1,3 @@
-cat > frontend/src/tools/file_tools_fix.py << 'EOF'
 async def delete_file(self, **kwargs) -> str:
     """Delete a file."""
     try:
@@ -14,4 +13,3 @@ async def delete_file(self, **kwargs) -> str:
                 
     except Exception as e:
         return f"Error deleting file: {str(e)}"
-EOF
