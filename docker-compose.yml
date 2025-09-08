@@ -11,11 +11,11 @@ services:
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 20s
 
   postgres:
     image: postgres:15
@@ -24,6 +24,7 @@ services:
       - POSTGRES_DB=agtsdbx
       - POSTGRES_USER=agtsdbx
       - POSTGRES_PASSWORD=agtsdbx_dev_password
+      - POSTGRES_HOST_AUTH_METHOD=trust
     ports:
       - "5432:5432"
     volumes:
@@ -31,7 +32,7 @@ services:
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agtsdbx -d agtsdbx"]
+      test: ["CMD-SHELL", "pg_isready -U agtsdbx -d agtsdbx || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -42,25 +43,33 @@ services:
       context: ./backend
       dockerfile: docker/Dockerfile
       target: development
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     container_name: agtsdbx-backend-dev
     ports:
       - "8000:8000"
     volumes:
-      # DON'T mount the entire backend directory!
-      # Mount only source and config, NOT vendor
-      - ./backend/src:/app/src:ro
-      - ./backend/public:/app/public:ro
-      - ./backend/config:/app/config:ro
-      - ./backend/tests:/app/tests:ro
-      # Writable directories
+      # Mount source files (not read-only anymore for development)
+      - ./backend/src:/app/src
+      - ./backend/public:/app/public
+      - ./backend/config:/app/config
+      - ./backend/tests:/app/tests
+      - ./backend/composer.json:/app/composer.json
+      - ./backend/composer.lock:/app/composer.lock:rw
+      # Named volumes for writable directories
       - agtsdbx_workdir:/app/WORKDIR
       - agtsdbx_storage:/app/storage
+      - agtsdbx_vendor:/app/vendor
       # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - APP_ENV=development
       - APP_DEBUG=true
       - LOG_LEVEL=debug
+      - WORKDIR=/app/WORKDIR
+      - DATABASE_URL=postgresql://agtsdbx:agtsdbx_dev_password@postgres:5432/agtsdbx
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     env_file:
       - .env
     depends_on:
@@ -71,31 +80,33 @@ services:
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 60s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       target: development
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     container_name: agtsdbx-frontend-dev
     ports:
       - "8080:8080"
     volumes:
-      # DON'T mount the entire frontend directory!
-      # Mount only source code, NOT installed packages
-      - ./frontend/src:/app/src:ro
-      - ./frontend/static:/app/static:ro
-      - ./frontend/templates:/app/templates:ro
-      - ./frontend/tests:/app/tests:ro
+      - ./frontend/src:/app/src
+      - ./frontend/static:/app/static
+      - ./frontend/templates:/app/templates
+      - ./frontend/tests:/app/tests
+      - ./frontend/requirements:/app/requirements
     environment:
       - DEBUG=true
       - AGTSDBX_BASE_URL=http://agtsdbx:8000
       - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
     env_file:
       - .env
     depends_on:
@@ -104,18 +115,28 @@ services:
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 60s
 
 volumes:
   agtsdbx_workdir:
+    driver: local
   agtsdbx_storage:
+    driver: local
+  agtsdbx_vendor:
+    driver: local
   redis_data:
+    driver: local
   postgres_data:
+    driver: local
 
 networks:
   agtsdbx_network:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16

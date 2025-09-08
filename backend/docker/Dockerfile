@@ -1,6 +1,6 @@
 FROM php:8.2-cli-alpine AS base
 
-# Install system dependencies INCLUDING PostgreSQL dev libraries
+# Install system dependencies and PHP extensions
 RUN apk add --no-cache \
     bash \
     git \
@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     unzip \
     docker-cli \
     sqlite \
+    sqlite-dev \
     postgresql-dev \
     postgresql-client \
     mysql-client \
@@ -21,80 +22,195 @@ RUN apk add --no-cache \
     make \
     autoconf \
     libc-dev \
-    linux-headers
+    linux-headers \
+    libzip-dev \
+    icu-dev \
+    oniguruma-dev \
+    libxml2-dev \
+    freetype-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
+    zlib-dev
 
-# Install PHP extensions
-RUN docker-php-ext-install \
-    pdo \
-    pdo_mysql \
-    pdo_pgsql \
-    pcntl \
-    posix \
-    sockets \
-    opcache
+# Configure and install PHP extensions
+RUN docker-php-ext-configure gd \
+        --with-freetype \
+        --with-jpeg \
+        --with-webp \
+    && docker-php-ext-install -j$(nproc) \
+        pdo \
+        pdo_mysql \
+        pdo_pgsql \
+        pdo_sqlite \
+        pcntl \
+        posix \
+        sockets \
+        opcache \
+        zip \
+        intl \
+        bcmath \
+        exif \
+        gd \
+        mbstring \
+        xml \
+        json
 
 # Install Redis extension
-RUN pecl install redis && docker-php-ext-enable redis
+RUN pecl install redis-5.3.7 && docker-php-ext-enable redis
 
 # Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
+
+# Configure PHP
+RUN { \
+        echo 'memory_limit=512M'; \
+        echo 'max_execution_time=300'; \
+        echo 'upload_max_filesize=100M'; \
+        echo 'post_max_size=100M'; \
+    } > /usr/local/etc/php/conf.d/app.ini
 
 WORKDIR /app
 
 # ===== DEVELOPMENT STAGE =====
 FROM base AS development
 
-RUN apk add --no-cache \
-    vim \
-    htop \
-    strace \
-    tcpdump
+# Install dev tools
+RUN apk add --no-cache vim htop strace tcpdump inotify-tools
 
-# IMPORTANT: Copy composer files first for better caching
-COPY composer.json composer.lock* ./
+# Create the entrypoint script inline
+RUN cat > /docker-entrypoint.sh << 'ENTRYPOINT_SCRIPT' && chmod +x /docker-entrypoint.sh
+#!/bin/sh
+set -e
 
-# Install dependencies BEFORE copying all files
-RUN composer install --no-scripts --no-autoloader
+echo "🚀 Starting backend initialization..."
 
-# NOW copy all application files
+# Ensure directories exist with proper permissions
+mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/storage/framework /app/WORKDIR
+chmod -R 777 /app/storage
+chmod 777 /app/WORKDIR
+touch /app/storage/logs/app.log
+chmod 666 /app/storage/logs/app.log
+
+# Install composer dependencies if vendor doesn't exist or composer.json is newer
+if [ ! -f /app/vendor/autoload.php ] || [ /app/composer.json -nt /app/vendor/autoload.php ]; then
+    echo "📦 Installing/updating composer dependencies..."
+    cd /app
+    
+    # If composer.lock exists, install from it; otherwise update
+    if [ -f /app/composer.lock ]; then
+        composer install \
+            --no-interaction \
+            --no-progress \
+            --prefer-dist \
+            --optimize-autoloader \
+            --no-scripts || {
+            echo "⚠️ Composer install failed, trying update..."
+            composer update \
+                --no-interaction \
+                --no-progress \
+                --prefer-dist \
+                --optimize-autoloader \
+                --no-scripts
+        }
+    else
+        composer update \
+            --no-interaction \
+            --no-progress \
+            --prefer-dist \
+            --optimize-autoloader \
+            --no-scripts
+    fi
+    
+    # Generate optimized autoloader
+    composer dump-autoload --optimize --no-interaction
+fi
+
+# Wait for services if configured
+if [ -n "$DATABASE_URL" ]; then
+    echo "⏳ Waiting for database..."
+    sleep 5
+fi
+
+if [ -n "$REDIS_HOST" ]; then
+    echo "⏳ Waiting for Redis..."
+    sleep 3
+fi
+
+echo "✅ Initialization complete, starting PHP server..."
+
+# Start PHP server with exec to handle signals properly
+exec php -S 0.0.0.0:8000 -t public
+ENTRYPOINT_SCRIPT
+
+# Copy composer files first (for layer caching)
+COPY composer.json /app/
+COPY composer.lock* /app/
+
+# Pre-install dependencies during build (will be updated at runtime if needed)
+RUN composer install \
+    --no-interaction \
+    --no-progress \
+    --prefer-dist \
+    --optimize-autoloader \
+    --no-scripts \
+    --no-autoloader \
+    2>/dev/null || \
+    composer update \
+    --no-interaction \
+    --no-progress \
+    --prefer-dist \
+    --optimize-autoloader \
+    --no-scripts \
+    --no-autoloader
+
+# Copy application code
 COPY . /app
 
-# Generate optimized autoloader AFTER all files are copied
-RUN composer dump-autoload --optimize
+# Generate autoloader after copying all files
+RUN composer dump-autoload --optimize --no-interaction 2>/dev/null || true
 
-RUN mkdir -p /app/storage/logs /app/storage/cache /app/WORKDIR \
-    && chmod -R 755 /app/storage /app/WORKDIR
+# Ensure all directories exist and have proper permissions
+RUN mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/storage/framework /app/WORKDIR \
+    && chmod -R 777 /app/storage \
+    && chmod 777 /app/WORKDIR \
+    && touch /app/storage/logs/app.log \
+    && chmod 666 /app/storage/logs/app.log
 
 EXPOSE 8000
 
-CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
+HEALTHCHECK --interval=10s --timeout=10s --start-period=60s --retries=10 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # ===== PRODUCTION STAGE =====
 FROM base AS production
 
-# Copy composer files first
-COPY composer.json composer.lock* ./
+COPY composer.json composer.lock* /app/
 
-# Install production dependencies
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --no-progress \
+    --prefer-dist \
+    --optimize-autoloader
 
-# Copy application files
 COPY . /app
 
-# Generate optimized autoloader for production
-RUN composer dump-autoload --optimize --classmap-authoritative
+RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
-RUN mkdir -p /app/storage/logs /app/storage/cache /app/WORKDIR \
+RUN mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/WORKDIR \
     && chmod -R 755 /app/storage \
     && chmod 700 /app/WORKDIR
 
-RUN rm -rf /app/tests /app/.git /app/.github /app/docker
+RUN rm -rf /app/tests /app/.git /app/.github /app/docker /app/.env.example
 
-# Create consistent user
-RUN adduser -D -u 1000 agtsdbx
+RUN adduser -D -u 1000 -s /bin/sh agtsdbx && \
+    chown -R agtsdbx:agtsdbx /app
+
 USER agtsdbx
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=5 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 EXPOSE 8000
