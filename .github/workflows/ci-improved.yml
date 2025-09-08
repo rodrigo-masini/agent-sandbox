@@ -1,0 +1,314 @@
+name: CI-Improved
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  BUILDKIT_PROGRESS: plain
+
+jobs:
+  # Quick validation before expensive tests
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run-backend: ${{ steps.check.outputs.backend }}
+      should-run-frontend: ${{ steps.check.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check what changed
+        id: check
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'docker-compose*.yml'
+              - '.github/workflows/**'
+            frontend:
+              - 'frontend/**'
+              - 'docker-compose*.yml'
+              - '.github/workflows/**'
+
+  # Build and test backend
+  backend:
+    needs: validate
+    if: needs.validate.outputs.should-run-backend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          buildkitd-flags: --debug
+      
+      - name: Generate composer.lock if missing
+        run: |
+          if [ ! -f backend/composer.lock ]; then
+            echo "📦 Generating composer.lock..."
+            chmod +x backend/scripts/generate-composer-lock.sh
+            ./backend/scripts/generate-composer-lock.sh
+          fi
+      
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/docker/Dockerfile
+          target: development
+          tags: agtsdbx-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+      
+      - name: Test backend container
+        run: |
+          # Create test environment
+          cat > .env.test << EOF
+          APP_ENV=testing
+          APP_DEBUG=true
+          LOG_LEVEL=debug
+          WORKDIR=/app/WORKDIR
+          API_KEYS=test_key_1,test_key_2
+          SECRET_KEY=test_secret
+          JWT_SECRET=test_jwt_secret
+          REQUIRE_AUTH=false
+          RATE_LIMIT_ENABLED=false
+          EOF
+          
+          # Run container
+          docker run -d \
+            --name test-backend \
+            --env-file .env.test \
+            -p 8000:8000 \
+            agtsdbx-backend:test
+          
+          # Wait for health
+          echo "⏳ Waiting for backend to start..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy"
+              curl -s http://localhost:8000/health | jq '.' || true
+              break
+            fi
+            echo "Attempt $i/30..."
+            sleep 2
+          done
+          
+          # Check logs if failed
+          if ! curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+            echo "❌ Backend failed to start"
+            docker logs test-backend
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop test-backend
+          docker rm test-backend
+
+  # Build and test frontend
+  frontend:
+    needs: validate
+    if: needs.validate.outputs.should-run-frontend == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Ensure Python modules exist
+        run: |
+          # Create __init__.py files for all modules
+          for dir in src src/app src/core src/clients src/tools src/ui src/ui/components src/ui/layouts; do
+            mkdir -p "frontend/$dir"
+            touch "frontend/$dir/__init__.py"
+          done
+      
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          target: development
+          tags: agtsdbx-frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+      
+      - name: Test frontend container
+        run: |
+          # Create test environment
+          cat > .env.test << EOF
+          DEBUG=true
+          FABRIC_API_KEY=test_api_key
+          FABRIC_ORG_ID=test_org
+          FABRIC_PROJECT_ID=test_project
+          AGTSDBX_BASE_URL=http://localhost:8000
+          EOF
+          
+          # Run container
+          docker run -d \
+            --name test-frontend \
+            --env-file .env.test \
+            -p 8080:8080 \
+            agtsdbx-frontend:test
+          
+          # Wait for health
+          echo "⏳ Waiting for frontend to start..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8080/api/health > /dev/null 2>&1; then
+              echo "✅ Frontend is healthy"
+              break
+            fi
+            echo "Attempt $i/30..."
+            sleep 2
+          done
+          
+          # Cleanup
+          docker stop test-frontend
+          docker rm test-frontend
+
+  # Integration tests with docker-compose
+  integration:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create test environment
+        run: |
+          cp .env.example .env
+          
+          # Set test values
+          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=test_api_key/g' .env
+          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=test_org/g' .env
+          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=test_project/g' .env
+          sed -i 's/AGTSDBX_API_KEY=.*/AGTSDBX_API_KEY=test_backend_key/g' .env
+          sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key/g' .env
+          sed -i 's/JWT_SECRET=.*/JWT_SECRET=test_jwt_secret/g' .env
+          sed -i 's/API_KEYS=.*/API_KEYS=test_key_1,test_key_2/g' .env
+          sed -i 's/REQUIRE_AUTH=.*/REQUIRE_AUTH=false/g' .env
+          
+          # Ensure composer.lock exists
+          if [ ! -f backend/composer.lock ]; then
+            chmod +x backend/scripts/generate-composer-lock.sh
+            ./backend/scripts/generate-composer-lock.sh
+          fi
+          
+          # Ensure Python modules
+          for dir in src src/app src/core src/clients src/tools src/ui src/ui/components src/ui/layouts; do
+            mkdir -p "frontend/$dir"
+            touch "frontend/$dir/__init__.py"
+          done
+      
+      - name: Start services
+        run: |
+          docker compose up -d
+          
+          echo "⏳ Waiting for services to start (60 seconds)..."
+          sleep 60
+          
+          echo "📊 Container status:"
+          docker compose ps
+      
+      - name: Health checks
+        run: |
+          echo "🏥 Checking service health..."
+          
+          # Check Redis
+          docker exec agtsdbx-redis-dev redis-cli ping || echo "Redis not responding"
+          
+          # Check PostgreSQL
+          docker exec agtsdbx-db-dev pg_isready -U agtsdbx || echo "PostgreSQL not ready"
+          
+          # Check Backend
+          for i in {1..20}; do
+            if curl -sf http://localhost:8000/health; then
+              echo "✅ Backend is healthy"
+              break
+            fi
+            echo "Backend check attempt $i/20..."
+            sleep 3
+          done
+          
+          # Check Frontend
+          for i in {1..20}; do
+            if curl -sf http://localhost:8080/api/health; then
+              echo "✅ Frontend is healthy"
+              break
+            fi
+            echo "Frontend check attempt $i/20..."
+            sleep 3
+          done
+      
+      - name: Run API tests
+        run: |
+          # Test backend endpoints
+          echo "Testing backend API..."
+          curl -X GET http://localhost:8000/health -f || exit 1
+          
+          # Test with API key
+          curl -X GET http://localhost:8000/api/v1/system/info \
+            -H "Authorization: ApiKey test_key_1" \
+            -H "Content-Type: application/json" \
+            -f || echo "System info endpoint failed"
+          
+          # Test frontend
+          echo "Testing frontend API..."
+          curl -X GET http://localhost:8080/api/health -f || exit 1
+      
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Docker Compose Status ==="
+          docker compose ps
+          
+          echo "=== Backend Logs ==="
+          docker compose logs agtsdbx --tail=100
+          
+          echo "=== Frontend Logs ==="
+          docker compose logs frontend --tail=100
+          
+          echo "=== Redis Logs ==="
+          docker compose logs redis --tail=50
+          
+          echo "=== PostgreSQL Logs ==="
+          docker compose logs postgres --tail=50
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose down -v || true
+
+  # Summary job
+  summary:
+    needs: [backend, frontend, integration]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo "## CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ needs.backend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration | ${{ needs.integration.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.backend.result }}" != "success" ] || \
+             [ "${{ needs.frontend.result }}" != "success" ] || \
+             [ "${{ needs.integration.result }}" != "success" ]; then
+            echo "❌ Pipeline failed"
+            exit 1
+          else
+            echo "✅ Pipeline succeeded"
+          fi

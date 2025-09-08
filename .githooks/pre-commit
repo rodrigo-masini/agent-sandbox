@@ -1,0 +1,70 @@
+#!/bin/bash
+# Pre-commit hook to validate changes before commit
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# Check if backend Dockerfile was modified
+if git diff --cached --name-only | grep -q "backend/docker/Dockerfile"; then
+    echo "📋 Validating Dockerfile..."
+    
+    # Check for invalid json extension in PHP 8.x
+    if grep -q "docker-php-ext-install.*json" backend/docker/Dockerfile; then
+        echo "❌ Error: 'json' extension should not be installed for PHP 8.x (it's built-in)"
+        echo "Please remove 'json' from the docker-php-ext-install command"
+        exit 1
+    fi
+    
+    # Validate Dockerfile syntax
+    docker build --no-cache -f backend/docker/Dockerfile backend/ --target base --dry-run 2>/dev/null || {
+        echo "⚠️ Warning: Dockerfile syntax check failed"
+    }
+fi
+
+# Check if composer.json was modified
+if git diff --cached --name-only | grep -q "backend/composer.json"; then
+    echo "📦 Validating composer.json..."
+    
+    # Check if composer.lock exists
+    if [ ! -f backend/composer.lock ]; then
+        echo "⚠️ Warning: composer.lock not found. Generating..."
+        if [ -x backend/scripts/generate-composer-lock.sh ]; then
+            ./backend/scripts/generate-composer-lock.sh
+            git add backend/composer.lock
+        fi
+    fi
+    
+    # Validate composer.json
+    docker run --rm -v "$(pwd)/backend":/app composer:2.7 validate --no-check-publish 2>/dev/null || {
+        echo "❌ Error: composer.json validation failed"
+        exit 1
+    }
+fi
+
+# Check Python modules
+if git diff --cached --name-only | grep -q "frontend/src/"; then
+    echo "🐍 Checking Python module structure..."
+    
+    for dir in frontend/src frontend/src/app frontend/src/core frontend/src/clients frontend/src/tools frontend/src/ui; do
+        if [ -d "$dir" ] && [ ! -f "$dir/__init__.py" ]; then
+            echo "⚠️ Warning: Missing __init__.py in $dir"
+            touch "$dir/__init__.py"
+            git add "$dir/__init__.py"
+        fi
+    done
+fi
+
+# Check for secrets
+echo "🔐 Checking for secrets..."
+if git diff --cached --name-only | xargs grep -E "(api_key|secret|password|token)" 2>/dev/null | grep -v ".example" | grep -v "test_" > /dev/null; then
+    echo "⚠️ Warning: Possible secrets detected in staged files"
+    echo "Please review your changes and ensure no real credentials are committed"
+    read -p "Continue anyway? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+echo "✅ Pre-commit checks passed"
