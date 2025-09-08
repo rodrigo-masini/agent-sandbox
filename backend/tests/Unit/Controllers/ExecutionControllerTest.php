@@ -6,26 +6,34 @@ use PHPUnit\Framework\TestCase;
 use Agtsdbx\Controllers\ExecutionController;
 use Agtsdbx\Services\ExecutionService;
 use Agtsdbx\Core\Security\SecurityManager;
-use Mockery;
+use Agtsdbx\Utils\Config;
+use Agtsdbx\Utils\Logger;
 
 class ExecutionControllerTest extends TestCase
 {
     private $controller;
     private $executionService;
     private $security;
+    private $config;
+    private $logger;
 
     protected function setUp(): void
     {
         parent::setUp();
         
-        // Create real controller instance, not a mock
+        // Create mock dependencies
+        $this->config = $this->createMock(Config::class);
+        $this->logger = $this->createMock(Logger::class);
+        $this->executionService = $this->createMock(ExecutionService::class);
+        $this->security = $this->createMock(SecurityManager::class);
+        
+        // Setup config mock to return expected values
+        $this->config->method('get')->willReturn('default_value');
+        
+        // Create controller
         $this->controller = new ExecutionController();
         
-        // Create mocks for dependencies
-        $this->executionService = Mockery::mock(ExecutionService::class);
-        $this->security = Mockery::mock(SecurityManager::class);
-        
-        // Use reflection to inject mocks into the real controller
+        // Use reflection to inject mocks
         $reflection = new \ReflectionClass($this->controller);
         
         $serviceProp = $reflection->getProperty('executionService');
@@ -35,11 +43,11 @@ class ExecutionControllerTest extends TestCase
         $securityProp = $reflection->getProperty('security');
         $securityProp->setAccessible(true);
         $securityProp->setValue($this->controller, $this->security);
-    }
-
-    protected function tearDown(): void
-    {
-        Mockery::close();
+        
+        // Also inject logger to avoid null reference
+        $loggerProp = $reflection->getProperty('logger');
+        $loggerProp->setAccessible(true);
+        $loggerProp->setValue($this->controller, $this->logger);
     }
 
     public function testExecuteBlocksDangerousCommands()
@@ -58,14 +66,18 @@ class ExecutionControllerTest extends TestCase
                 'body' => json_encode(['command' => $command])
             ];
 
-            $this->security->shouldReceive('isCommandAllowed')
+            $this->security->expects($this->once())
+                ->method('isCommandAllowed')
                 ->with($command)
-                ->andReturn(false);
+                ->willReturn(false);
 
             $response = $this->controller->execute($request);
 
             $this->assertEquals(403, $response['status']);
             $this->assertEquals('Command not allowed', $response['body']['error']);
+            
+            // Reset mock for next iteration
+            $this->setUp();
         }
     }
 
@@ -78,12 +90,18 @@ class ExecutionControllerTest extends TestCase
             ])
         ];
 
-        $this->security->shouldReceive('isCommandAllowed')->andReturn(true);
-        $this->security->shouldReceive('sanitizeCommand')->andReturnUsing(function($cmd) { return $cmd; });
+        $this->security->expects($this->once())
+            ->method('isCommandAllowed')
+            ->willReturn(true);
+            
+        $this->security->expects($this->once())
+            ->method('sanitizeCommand')
+            ->willReturnArgument(0);
 
-        $this->executionService->shouldReceive('execute')
+        $this->executionService->expects($this->once())
+            ->method('execute')
             ->with('sleep 10', ['timeout' => 1])
-            ->andReturn([
+            ->willReturn([
                 'exit_code' => 124,  // Timeout exit code
                 'success' => false,
                 'stderr' => 'Command timed out'
