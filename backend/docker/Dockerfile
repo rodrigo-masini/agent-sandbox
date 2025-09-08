@@ -117,8 +117,8 @@ RUN mkdir -p /app/storage/logs /app/storage/cache /app/storage/sessions /app/sto
     && touch /app/storage/logs/app.log \
     && chmod 666 /app/storage/logs/app.log
 
-# Create the entrypoint script (simplified and more robust)
-RUN cat > /docker-entrypoint.sh << 'ENTRYPOINT_SCRIPT' && chmod +x /docker-entrypoint.sh
+# Create the entrypoint script with proper heredoc syntax
+RUN cat > /docker-entrypoint.sh << 'ENTRYPOINT_SCRIPT'
 #!/bin/bash
 set -e
 
@@ -181,6 +181,8 @@ fi
 echo "✅ Starting PHP development server on 0.0.0.0:8000..."
 exec php -S 0.0.0.0:8000 -t public
 ENTRYPOINT_SCRIPT
+
+RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 8000
 
