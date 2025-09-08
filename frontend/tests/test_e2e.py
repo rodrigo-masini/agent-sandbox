@@ -6,27 +6,17 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Mock the app module before importing
+# Mock configuration before any imports
 with patch('src.app.main.Config') as MockConfig:
     mock_config = Mock()
-    mock_config.get = Mock(side_effect=lambda key, default=None: {
-        "FABRIC_API_KEY": "test_key",
-        "FABRIC_ORG_ID": "test_org",
-        "FABRIC_PROJECT_ID": "test_project",
-        "FABRIC_BASE_URL": "https://api.test.com/v1",
-        "FABRIC_MODEL": "test-model",
-        "AGTSDBX_BASE_URL": "http://localhost:8000",
-        "AGTSDBX_TIMEOUT": 300,
-        "FABRIC_TIMEOUT": 300,
-    }.get(key, default))
+    mock_config.get = Mock(return_value="test_value")
     MockConfig.return_value = mock_config
 
-# Now safe to import
 from src.app.main import AgtsdbxApp
 
 
 @pytest.fixture
-async def mock_app():
+def mock_app():  # NOT async - just a regular fixture
     """Create a properly mocked app instance."""
     # Create app instance
     app = AgtsdbxApp()
@@ -70,14 +60,14 @@ async def mock_app():
     # Initialize messages
     app.messages = []
     
-    return app  # Return, not yield, for a regular async fixture
+    return app  # Regular return, not async
 
 
 class TestE2EWorkflows:
     @pytest.mark.asyncio
     async def test_complete_tool_execution_workflow(self, mock_app):
         """Test the complete workflow from user message to tool execution."""
-        app = mock_app  # Get the app from fixture
+        app = mock_app  # Now this is the actual app object, not a coroutine
         
         # Setup mock responses
         app.fabric_client.chat_completion.side_effect = [
@@ -119,7 +109,7 @@ class TestE2EWorkflows:
     @pytest.mark.asyncio
     async def test_multiple_tool_calls_in_sequence(self, mock_app):
         """Test handling multiple tool calls in a single request."""
-        app = mock_app
+        app = mock_app  # Regular object, not coroutine
         
         tool_calls = [
             {
@@ -155,7 +145,7 @@ class TestE2EWorkflows:
     @pytest.mark.asyncio
     async def test_tool_execution_error_handling(self, mock_app):
         """Test error handling when tool execution fails."""
-        app = mock_app
+        app = mock_app  # Regular object, not coroutine
         
         tool_calls = [
             {
