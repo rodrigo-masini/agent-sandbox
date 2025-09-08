@@ -1,4 +1,4 @@
-FROM php:8.2-cli-alpine AS base
+FROM php:8.4-cli-alpine AS base
 
 # Install system dependencies and PHP extensions
 RUN apk add --no-cache \
