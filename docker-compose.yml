@@ -1,75 +1,94 @@
 version: '3.9'
 
+x-common-variables: &common-variables
+  APP_ENV: ${APP_ENV:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-debug}
+  WORKDIR: /app/WORKDIR
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 10
+  start_period: 30s
+
 services:
+  # ============================================
+  # REDIS
+  # ============================================
   redis:
     image: redis:7-alpine
-    container_name: agtsdbx-redis-dev
+    container_name: ${PROJECT_NAME:-agtsdbx}-redis
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      <<: *healthcheck-defaults
+      test: ["CMD", "redis-cli", "ping"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # ============================================
+  # POSTGRESQL
+  # ============================================
   postgres:
-    image: postgres:15
-    container_name: agtsdbx-db-dev
+    image: postgres:15-alpine
+    container_name: ${PROJECT_NAME:-agtsdbx}-postgres
+    restart: unless-stopped
     environment:
-      - POSTGRES_DB=agtsdbx
-      - POSTGRES_USER=agtsdbx
-      - POSTGRES_PASSWORD=agtsdbx_dev_password
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      POSTGRES_DB: ${POSTGRES_DB:-agtsdbx}
+      POSTGRES_USER: ${POSTGRES_USER:-agtsdbx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agtsdbx_password}
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_AUTH:-trust}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql:/docker-entrypoint-initdb.d:ro
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agtsdbx -d agtsdbx || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
 
+  # ============================================
+  # BACKEND (PHP)
+  # ============================================
   agtsdbx:
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
-      target: development
+      target: ${BUILD_TARGET:-development}
       args:
         - BUILDKIT_INLINE_CACHE=1
-    container_name: agtsdbx-backend-dev
+    container_name: ${PROJECT_NAME:-agtsdbx}-backend
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      # Mount source files (not read-only anymore for development)
-      - ./backend/src:/app/src
-      - ./backend/public:/app/public
-      - ./backend/config:/app/config
-      - ./backend/tests:/app/tests
-      - ./backend/composer.json:/app/composer.json
+      - ./backend/src:/app/src:${MOUNT_MODE:-rw}
+      - ./backend/public:/app/public:${MOUNT_MODE:-rw}
+      - ./backend/config:/app/config:${MOUNT_MODE:-rw}
+      - ./backend/tests:/app/tests:${MOUNT_MODE:-rw}
+      - ./backend/composer.json:/app/composer.json:ro
       - ./backend/composer.lock:/app/composer.lock:rw
-      # Named volumes for writable directories
-      - agtsdbx_workdir:/app/WORKDIR
-      - agtsdbx_storage:/app/storage
-      - agtsdbx_vendor:/app/vendor
-      # Docker socket for container management
-      - /var/run/docker.sock:/var/run/docker.sock
+      - backend_vendor:/app/vendor
+      - backend_workdir:/app/WORKDIR
+      - backend_storage:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock:${DOCKER_SOCK_MODE:-rw}
     environment:
-      - APP_ENV=development
-      - APP_DEBUG=true
-      - LOG_LEVEL=debug
-      - WORKDIR=/app/WORKDIR
-      - DATABASE_URL=postgresql://agtsdbx:agtsdbx_dev_password@postgres:5432/agtsdbx
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      <<: *common-variables
+      DATABASE_URL: postgresql://${POSTGRES_USER:-agtsdbx}:${POSTGRES_PASSWORD:-agtsdbx_password}@postgres:5432/${POSTGRES_DB:-agtsdbx}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-512M}
+      PHP_MAX_EXECUTION_TIME: ${PHP_MAX_EXECUTION_TIME:-300}
     env_file:
       - .env
     depends_on:
@@ -80,33 +99,43 @@ services:
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || php -r 'exit(1);'"]
+    deploy:
+      resources:
+        limits:
+          cpus: '${BACKEND_CPU_LIMIT:-2}'
+          memory: ${BACKEND_MEM_LIMIT:-1G}
+        reservations:
+          cpus: '${BACKEND_CPU_RESERVE:-0.5}'
+          memory: ${BACKEND_MEM_RESERVE:-256M}
 
+  # ============================================
+  # FRONTEND (Python/NiceGUI)
+  # ============================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: development
+      target: ${BUILD_TARGET:-development}
       args:
         - BUILDKIT_INLINE_CACHE=1
-    container_name: agtsdbx-frontend-dev
+    container_name: ${PROJECT_NAME:-agtsdbx}-frontend
+    restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${FRONTEND_PORT:-8080}:8080"
     volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/static:/app/static
-      - ./frontend/templates:/app/templates
-      - ./frontend/tests:/app/tests
-      - ./frontend/requirements:/app/requirements
+      - ./frontend/src:/app/src:${MOUNT_MODE:-rw}
+      - ./frontend/static:/app/static:${MOUNT_MODE:-rw}
+      - ./frontend/templates:/app/templates:${MOUNT_MODE:-rw}
+      - ./frontend/tests:/app/tests:${MOUNT_MODE:-rw}
+      - ./frontend/requirements:/app/requirements:ro
     environment:
-      - DEBUG=true
-      - AGTSDBX_BASE_URL=http://agtsdbx:8000
-      - PYTHONPATH=/app
-      - PYTHONUNBUFFERED=1
+      <<: *common-variables
+      DEBUG: ${DEBUG:-true}
+      AGTSDBX_BASE_URL: http://agtsdbx:8000
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
     env_file:
       - .env
     depends_on:
@@ -115,22 +144,24 @@ services:
     networks:
       - agtsdbx_network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || python3 -c 'exit(1)'"]
+    deploy:
+      resources:
+        limits:
+          cpus: '${FRONTEND_CPU_LIMIT:-1}'
+          memory: ${FRONTEND_MEM_LIMIT:-512M}
 
 volumes:
-  agtsdbx_workdir:
-    driver: local
-  agtsdbx_storage:
-    driver: local
-  agtsdbx_vendor:
-    driver: local
   redis_data:
     driver: local
   postgres_data:
+    driver: local
+  backend_vendor:
+    driver: local
+  backend_workdir:
+    driver: local
+  backend_storage:
     driver: local
 
 networks:
