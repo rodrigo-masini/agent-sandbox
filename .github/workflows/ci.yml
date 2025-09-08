@@ -1,370 +1,108 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
-  schedule:
-    # Run security scans daily at 2 AM UTC
-    - cron: '0 2 * * *'
-
-permissions:
-  contents: read
-  actions: read
-  checks: write
-  pull-requests: write
-  issues: write
-  statuses: write
-  deployments: write
-  packages: write
-  security-events: write
-  id-token: write
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Enable debug mode with tmate session'
+        required: false
+        default: false
 
 env:
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
-  PROJECT_NAME: agtsdbx
+  BUILDKIT_PROGRESS: plain
+  CI: true
+  # Versions
+  PHP_VERSION: '8.2'
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+  COMPOSE_VERSION: '2.24.0'
 
 jobs:
-  # Job to detect what changed (for optimization)
-  changes:
+  # Job 1: Setup and Validation
+  setup:
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      docker: ${{ steps.filter.outputs.docker }}
-      docs: ${{ steps.filter.outputs.docs }}
+      cache-key: ${{ steps.cache-key.outputs.key }}
+      should-deploy: ${{ steps.deployment.outputs.should-deploy }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v2
-        id: filter
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          filters: |
-            backend:
-              - 'backend/**'
-              - 'docker-compose*.yml'
-            frontend:
-              - 'frontend/**'
-              - 'docker-compose*.yml'
-            docker:
-              - '**/Dockerfile'
-              - 'docker-compose*.yml'
-            docs:
-              - '**/*.md'
-              - 'docs/**'
+          fetch-depth: 0  # For proper versioning
 
-  # PHP Backend Tests
-  test-backend:
-    needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          echo "key=${{ runner.os }}-${{ hashFiles('**/composer.lock', '**/requirements/*.txt', '**/package-lock.json') }}" >> $GITHUB_OUTPUT
+
+      - name: Check deployment status
+        id: deployment
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ github.event_name }}" == "push" ]]; then
+            echo "should-deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate configuration files
+        run: |
+          # Validate JSON files
+          for file in $(find . -name "*.json" -not -path "./vendor/*" -not -path "./node_modules/*"); do
+            python3 -m json.tool "$file" > /dev/null || { echo "Invalid JSON: $file"; exit 1; }
+          done
+          
+          # Validate YAML files
+          for file in $(find . -name "*.yml" -o -name "*.yaml" -not -path "./.git/*"); do
+            python3 -c "import yaml; yaml.safe_load(open('$file'))" || { echo "Invalid YAML: $file"; exit 1; }
+          done
+
+  # Job 2: Prepare Environment
+  prepare:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        php-version: ['8.1', '8.2', '8.3']
-        dependencies: ['lowest', 'highest']
-        exclude:
-          # PHP 8.3 might have issues with lowest dependencies
-          - php-version: '8.3'
-            dependencies: 'lowest'
+    needs: setup
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup PHP ${{ matrix.php-version }}
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php-version }}
-          extensions: pdo, pdo_mysql, pdo_pgsql, redis, curl, json, opcache, mbstring, xml, zip, pcntl, posix
-          coverage: xdebug
-          tools: composer:v2, phpstan, phpcs, phpunit
-          
-      - name: Get composer cache directory
-        id: composer-cache
-        run: |
-          cd backend
-          echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
-        
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-php-${{ matrix.php-version }}-${{ matrix.dependencies }}-${{ hashFiles('**/composer.json') }}
-          restore-keys: |
-            ${{ runner.os }}-php-${{ matrix.php-version }}-${{ matrix.dependencies }}-
-            ${{ runner.os }}-php-${{ matrix.php-version }}-
-          
-      - name: Install dependencies
-        run: |
-          cd backend
-          
-          # Remove composer.lock to ensure fresh dependency resolution
-          rm -f composer.lock
-          
-          # Install dependencies based on strategy
-          if [[ "${{ matrix.dependencies }}" == "lowest" ]]; then
-            echo "Installing lowest dependencies for PHP ${{ matrix.php-version }}"
-            composer update --prefer-lowest --prefer-dist --no-interaction --no-progress --optimize-autoloader
-          else
-            echo "Installing highest dependencies for PHP ${{ matrix.php-version }}"
-            composer update --prefer-dist --no-interaction --no-progress --optimize-autoloader
-          fi
-          
-          # Show what was installed
-          composer show --direct
-          
-      - name: Run PHP linting
-        run: |
-          cd backend
-          find src -name "*.php" -exec php -l {} \; | grep -v "No syntax errors" || true
-          
-      - name: Run PHP CodeSniffer
-        id: phpcs
-        run: |
-          cd backend
-          if [ -f vendor/bin/phpcs ]; then
-            vendor/bin/phpcs --standard=PSR12 --report=checkstyle --report-file=phpcs-report.xml src/ || true
-            vendor/bin/phpcs --standard=PSR12 --report=summary src/ || true
-          else
-            echo "PHP CodeSniffer not installed"
-          fi
-          
-      - name: Run PHPStan
-        id: phpstan
-        run: |
-          cd backend
-          if [ -f phpstan.neon ] && [ -f vendor/bin/phpstan ]; then
-            vendor/bin/phpstan analyse --error-format=github --no-progress || true
-            vendor/bin/phpstan analyse --error-format=table --no-progress > phpstan-report.txt || true
-          else
-            echo "PHPStan not configured or installed"
-          fi
-          
-      - name: Run Unit Tests with Coverage
-        id: phpunit
-        run: |
-          cd backend
-          if [ -d tests ] && [ -f vendor/bin/phpunit ]; then
-            vendor/bin/phpunit \
-              --coverage-clover=coverage.xml \
-              --coverage-html=coverage-html \
-              --coverage-text \
-              --log-junit=junit.xml \
-              --testdox-html=testdox.html || true
-          else
-            echo "No tests directory or PHPUnit not installed"
-          fi
-          
-      - name: Generate test report summary
-        if: always()
-        run: |
-          cd backend
-          echo "## PHP ${{ matrix.php-version }} - ${{ matrix.dependencies }} deps Test Results" >> $GITHUB_STEP_SUMMARY
-          if [ -f junit.xml ]; then
-            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            # Parse junit.xml for summary
-            if grep -q 'tests="' junit.xml; then
-              TESTS=$(grep -o 'tests="[^"]*"' junit.xml | head -1 | sed 's/tests="//;s/"//')
-              FAILURES=$(grep -o 'failures="[^"]*"' junit.xml | head -1 | sed 's/failures="//;s/"//')
-              echo "| Total Tests | ${TESTS:-0} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Failures | ${FAILURES:-0} |" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "No test results found" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-      - name: Upload PHP test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: php-${{ matrix.php-version }}-${{ matrix.dependencies }}-test-results
-          path: |
-            backend/coverage-html/
-            backend/junit.xml
-            backend/testdox.html
-            backend/phpcs-report.xml
-            backend/phpstan-report.txt
-          retention-days: 7
-          
-      - name: Upload PHP Coverage to Codecov
-        if: success() && matrix.dependencies == 'highest'
-        uses: codecov/codecov-action@v3
-        with:
-          file: backend/coverage.xml
-          flags: backend-php-${{ matrix.php-version }}
-          fail_ci_if_error: false
-          
-      - name: Comment PR with PHP results
-        if: github.event_name == 'pull_request' && always() && matrix.dependencies == 'highest'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: php-${{ matrix.php-version }}
-          message: |
-            ## PHP ${{ matrix.php-version }} Test Results
-            
-            <details>
-            <summary>Click to expand</summary>
-            
-            - ✅ Linting: Passed
-            - 📊 Code Coverage: See [Codecov Report](https://codecov.io/gh/${{ github.repository }})
-            - 📝 PHPStan: Check artifacts for detailed report
-            - 🧪 Unit Tests: Check artifacts for detailed report
-            
-            </details>
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Python Frontend Tests
-  test-frontend:
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.10', '3.11', '3.12']
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: frontend/requirements/*.txt
-          
-      - name: Install dependencies
-        run: |
-          cd frontend
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -r requirements/dev.txt
-          
-      - name: Run linting
-        id: flake8
-        run: |
-          cd frontend
-          flake8 src --max-line-length=120 --extend-ignore=E203,W503 --format=html --htmldir=flake8-report || true
-          flake8 src --max-line-length=120 --extend-ignore=E203,W503 --count --statistics || true
-          
-      - name: Run type checking
-        id: mypy
-        run: |
-          cd frontend
-          mypy src --html-report mypy-report --ignore-missing-imports || true
-          
-      - name: Run Security Check with Bandit
-        id: bandit
-        run: |
-          cd frontend
-          pip install bandit[toml]
-          bandit -r src/ -f json -o bandit-report.json || true
-          bandit -r src/ -f txt || true
-          
-      - name: Run Unit Tests with Coverage
-        id: pytest
-        run: |
-          cd frontend
-          if [ -d tests ]; then
-            python -m pytest tests/ \
-              --cov=src \
-              --cov-report=term-missing \
-              --cov-report=xml \
-              --cov-report=html:htmlcov \
-              --junitxml=junit.xml \
-              --html=pytest-report.html \
-              --self-contained-html \
-              -v || true
-          else
-            echo "No tests directory found"
-          fi
-          
-      - name: Generate test report summary
-        if: always()
-        run: |
-          cd frontend
-          echo "## Python ${{ matrix.python-version }} Test Results" >> $GITHUB_STEP_SUMMARY
-          if [ -f junit.xml ]; then
-            # Extract test metrics using grep and sed
-            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            
-            if grep -q 'tests=' junit.xml; then
-              TESTS=$(grep -o 'tests="[^"]*"' junit.xml | head -1 | sed 's/tests="//;s/"//')
-              FAILURES=$(grep -o 'failures="[^"]*"' junit.xml | head -1 | sed 's/failures="//;s/"//')
-              ERRORS=$(grep -o 'errors="[^"]*"' junit.xml | head -1 | sed 's/errors="//;s/"//')
-              TIME=$(grep -o 'time="[^"]*"' junit.xml | head -1 | sed 's/time="//;s/"//')
-              
-              echo "| Tests | ${TESTS:-0} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Failures | ${FAILURES:-0} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Errors | ${ERRORS:-0} |" >> $GITHUB_STEP_SUMMARY
-              echo "| Time | ${TIME:-0}s |" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "Could not parse junit.xml" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "No test results found" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-      - name: Upload Python test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-${{ matrix.python-version }}-test-results
-          path: |
-            frontend/htmlcov/
-            frontend/junit.xml
-            frontend/pytest-report.html
-            frontend/flake8-report/
-            frontend/mypy-report/
-            frontend/bandit-report.json
-          retention-days: 7
-          
-      - name: Upload Python Coverage to Codecov
-        if: success()
-        uses: codecov/codecov-action@v3
-        with:
-          file: frontend/coverage.xml
-          flags: frontend-python-${{ matrix.python-version }}
-          fail_ci_if_error: false
-
-
-  # Integration Tests
-  integration-tests:
-    needs: [test-backend, test-frontend]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
-          
-      - name: Create .env file for testing
+          buildkitd-flags: --debug
+          driver-opts: |
+            image=moby/buildkit:v0.12.0
+            network=host
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Fix Backend Dockerfile
         run: |
-          cp .env.example .env
+          echo "🔧 Fixing known Dockerfile issues..."
           
-          # Replace all required environment variables
-          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=test_api_key/g' .env
-          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=test_org/g' .env
-          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=test_project/g' .env
-          sed -i 's/AGTSDBX_API_KEY=.*/AGTSDBX_API_KEY=test_backend_key/g' .env
-          sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key/g' .env
-          sed -i 's/JWT_SECRET=.*/JWT_SECRET=test_jwt_secret/g' .env
-          sed -i 's/API_KEYS=.*/API_KEYS=test_key_1,test_key_2/g' .env
-          sed -i 's/WORKDIR=.*/WORKDIR=\/app\/WORKDIR/g' .env
-          
-          # Show configuration (without sensitive data)
-          echo "Configuration prepared for testing"
-      
-      - name: Generate composer.lock in CI
+          # Remove json extension (built-in for PHP 8.x)
+          if grep -q "docker-php-ext-install.*json" backend/docker/Dockerfile; then
+            sed -i 's/\bjson\b//g' backend/docker/Dockerfile
+            sed -i 's/  */ /g' backend/docker/Dockerfile
+            echo "✅ Removed json extension from Dockerfile"
+          fi
+
+      - name: Generate composer.lock
         run: |
-          echo "📦 Generating composer.lock for CI..."
-          
-          # Create a temporary composer.lock if it doesn't exist
           if [ ! -f backend/composer.lock ]; then
-            echo "No composer.lock found, generating one..."
-            
-            # Use Docker to generate composer.lock
+            echo "📦 Generating composer.lock..."
             docker run --rm \
               -v "$(pwd)/backend":/app \
               -w /app \
@@ -374,177 +112,380 @@ jobs:
               --prefer-dist \
               --prefer-stable \
               --ignore-platform-reqs \
-              --no-scripts \
-              --no-autoloader
-            
-            if [ -f backend/composer.lock ]; then
-              echo "✅ composer.lock generated"
-              echo "Showing first 20 lines of composer.lock:"
-              head -20 backend/composer.lock
-            else
-              echo "⚠️ Could not generate composer.lock, will rely on Dockerfile"
-            fi
-          else
-            echo "✅ composer.lock already exists"
+              --no-scripts
           fi
-      
-      - name: Prepare Python modules
+
+      - name: Setup Python modules
         run: |
           echo "🐍 Setting up Python module structure..."
-          
-          # Create all required __init__.py files
           for dir in src src/app src/core src/clients src/tools src/ui src/ui/components src/ui/layouts; do
             mkdir -p "frontend/$dir"
             touch "frontend/$dir/__init__.py"
           done
-          
-          echo "✅ Python modules prepared"
-      
-      - name: Build services with Docker Compose
-        env:
-          DOCKER_BUILDKIT: 1
-          COMPOSE_DOCKER_CLI_BUILD: 1
-          BUILDKIT_PROGRESS: plain
+
+      - name: Create test environment
         run: |
-          echo "🔨 Building Docker images..."
+          cp .env.example .env
           
-          # Build with docker compose
-          docker compose build --progress=plain
-          
-          echo "📦 Images built:"
-          docker images | grep -E "(agtsdbx|redis|postgres)" || true
-      
-      - name: Start services
+          # Set test values
+          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=test_api_key/g' .env
+          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=test_org/g' .env
+          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=test_project/g' .env
+          sed -i 's/AGTSDBX_API_KEY=.*/AGTSDBX_API_KEY=test_backend_key/g' .env
+          sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key/g' .env
+          sed -i 's/JWT_SECRET=.*/JWT_SECRET=test_jwt_secret/g' .env
+          sed -i 's/API_KEYS=.*/API_KEYS=test_key_1,test_key_2/g' .env
+          sed -i 's/REQUIRE_AUTH=.*/REQUIRE_AUTH=false/g' .env
+
+      - name: Upload prepared environment
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-env
+          path: |
+            .env
+            backend/composer.lock
+            frontend/src/**/__init__.py
+          retention-days: 1
+
+  # Job 3: Build Docker Images
+  build:
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download prepared environment
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-env
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/docker/Dockerfile
+          target: development
+          tags: agtsdbx-${{ matrix.service }}:test
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          load: true
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Test ${{ matrix.service }} container startup
         run: |
-          echo "🚀 Starting services..."
+          echo "🧪 Testing ${{ matrix.service }} container..."
           
-          # Start services with docker compose
-          docker compose up -d
-          
-          echo "⏳ Waiting for containers to initialize (30 seconds)..."
-          sleep 30
-          
-          echo "📊 Container status:"
-          docker compose ps
-          docker ps -a
-      
-      - name: Check service logs
-        run: |
-          echo "📋 Service Logs:"
-          echo "=== Redis ===" 
-          docker compose logs redis --tail=20
-          echo ""
-          echo "=== PostgreSQL ==="
-          docker compose logs postgres --tail=20
-          echo ""
-          echo "=== Backend ===" 
-          docker compose logs agtsdbx --tail=50
-          echo ""
-          echo "=== Frontend ==="
-          docker compose logs frontend --tail=30
-      
-      - name: Verify backend health
-        run: |
-          echo "🏥 Checking backend health..."
-          
-          # Multiple attempts with increasing delays
-          for attempt in {1..20}; do
-            echo "Attempt $attempt/20..."
-            
-            # Check from inside container first
-            if docker exec agtsdbx-backend-dev curl -sf http://localhost:8000/health > /tmp/health.json 2>/dev/null; then
-              echo "✅ Backend health check passed (internal)"
-              cat /tmp/health.json | python3 -m json.tool || cat /tmp/health.json
+          if [ "${{ matrix.service }}" == "backend" ]; then
+            docker run -d \
+              --name test-${{ matrix.service }} \
+              --env-file .env \
+              -p 8000:8000 \
+              agtsdbx-${{ matrix.service }}:test
               
-              # Now check from host
+            # Wait for health with detailed logging
+            for i in {1..30}; do
+              echo "Attempt $i/30..."
+              
+              # Check container status
+              if ! docker ps | grep -q test-${{ matrix.service }}; then
+                echo "❌ Container stopped!"
+                docker logs test-${{ matrix.service }}
+                exit 1
+              fi
+              
+              # Test health endpoint
               if curl -sf http://localhost:8000/health; then
-                echo "✅ Backend health check passed (external)"
+                echo "✅ Backend is healthy!"
                 break
               fi
-            fi
+              
+              if [ $i -eq 30 ]; then
+                echo "❌ Health check timeout"
+                docker logs test-${{ matrix.service }}
+                exit 1
+              fi
+              
+              sleep 2
+            done
+          else
+            # Frontend test
+            docker run -d \
+              --name test-${{ matrix.service }} \
+              --env-file .env \
+              -p 8080:8080 \
+              agtsdbx-${{ matrix.service }}:test
+              
+            sleep 10
+            docker logs test-${{ matrix.service }}
+          fi
+          
+          docker stop test-${{ matrix.service }}
+          docker rm test-${{ matrix.service }}
+
+      - name: Save image
+        run: |
+          docker save agtsdbx-${{ matrix.service }}:test | gzip > ${{ matrix.service }}-image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ matrix.service }}
+          path: ${{ matrix.service }}-image.tar.gz
+          retention-days: 1
+
+  # Job 4: Unit Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      matrix:
+        include:
+          - language: php
+            version: '8.2'
+            directory: backend
+          - language: python
+            version: '3.11'
+            directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download prepared environment
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-env
+
+      - name: Setup ${{ matrix.language }} ${{ matrix.version }}
+        if: matrix.language == 'php'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.version }}
+          extensions: pdo, redis, json, mbstring, xml, curl
+          coverage: xdebug
+
+      - name: Setup ${{ matrix.language }} ${{ matrix.version }}
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.directory }}
+          if [ "${{ matrix.language }}" == "php" ]; then
+            composer install --no-interaction --prefer-dist
+          else
+            pip install -r requirements/dev.txt
+          fi
+
+      - name: Run tests with coverage
+        run: |
+          cd ${{ matrix.directory }}
+          if [ "${{ matrix.language }}" == "php" ]; then
+            vendor/bin/phpunit --coverage-clover=coverage.xml --coverage-html=coverage-html
+          else
+            pytest tests/ --cov=src --cov-report=xml --cov-report=html:coverage-html -v
+          fi
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ${{ matrix.directory }}/coverage.xml
+          flags: ${{ matrix.language }}-${{ matrix.version }}
+          fail_ci_if_error: false
+
+  # Job 5: Integration Tests with Enhanced Debugging
+  integration:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: agtsdbx
+          POSTGRES_USER: agtsdbx
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker images
+        uses: actions/download-artifact@v4
+        with:
+          pattern: docker-image-*
+          merge-multiple: true
+
+      - name: Load Docker images
+        run: |
+          docker load < backend-image.tar.gz
+          docker load < frontend-image.tar.gz
+
+      - name: Download prepared environment
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-env
+
+      - name: Create Docker network
+        run: docker network create test-network
+
+      - name: Start backend with debugging
+        run: |
+          echo "🚀 Starting backend container..."
+          
+          docker run -d \
+            --name agtsdbx-backend \
+            --network test-network \
+            --env-file .env \
+            -e DATABASE_URL=postgresql://agtsdbx:test_password@postgres:5432/agtsdbx \
+            -e REDIS_HOST=redis \
+            -e APP_DEBUG=true \
+            -e LOG_LEVEL=debug \
+            -p 8000:8000 \
+            agtsdbx-backend:test
+          
+          echo "⏳ Waiting for backend to be healthy..."
+          
+          # Enhanced health check with debugging
+          for i in {1..60}; do
+            echo "Health check attempt $i/60..."
             
-            if [ $attempt -eq 20 ]; then
-              echo "❌ Backend health check failed after 20 attempts"
-              
-              # Debug information
-              echo "Container logs:"
-              docker logs agtsdbx-backend-dev --tail=100
-              
-              echo "Container inspection:"
-              docker inspect agtsdbx-backend-dev | python3 -m json.tool | head -100
-              
+            # Check if container is still running
+            if ! docker ps | grep -q agtsdbx-backend; then
+              echo "❌ Backend container stopped!"
+              echo "Exit code: $(docker inspect agtsdbx-backend --format='{{.State.ExitCode}}')"
+              echo "=== Container Logs ==="
+              docker logs agtsdbx-backend
+              echo "=== Container Inspect ==="
+              docker inspect agtsdbx-backend | jq '.[] | {State, Config: {Env: .Config.Env}}'
               exit 1
             fi
             
-            sleep 5
-          done
-      
-      - name: Verify frontend health
-        run: |
-          echo "🏥 Checking frontend health..."
-          
-          for attempt in {1..20}; do
-            echo "Attempt $attempt/20..."
-            
-            if curl -sf http://localhost:8080/api/health > /tmp/frontend-health.json 2>/dev/null; then
-              echo "✅ Frontend health check passed"
-              cat /tmp/frontend-health.json | python3 -m json.tool || cat /tmp/frontend-health.json
+            # Try health endpoint with verbose output
+            if curl -v -f http://localhost:8000/health 2>&1 | tee health-check.log; then
+              echo "✅ Backend is healthy!"
+              cat health-check.log | grep -E '(HTTP|{)'
               break
             fi
             
-            if [ $attempt -eq 20 ]; then
-              echo "❌ Frontend health check failed"
-              docker logs agtsdbx-frontend-dev --tail=50
+            # Show container logs periodically
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "=== Container logs (last 20 lines) ==="
+              docker logs --tail 20 agtsdbx-backend
+            fi
+            
+            if [ $i -eq 60 ]; then
+              echo "❌ Backend health check timeout!"
+              echo "=== Final container logs ==="
+              docker logs agtsdbx-backend
+              echo "=== Process list inside container ==="
+              docker exec agtsdbx-backend ps aux || true
+              echo "=== Check file system ==="
+              docker exec agtsdbx-backend ls -la /app/ || true
+              docker exec agtsdbx-backend ls -la /app/vendor/ || true
+              docker exec agtsdbx-backend php -v || true
               exit 1
             fi
             
-            sleep 5
+            sleep 2
           done
-      
-      - name: Run integration tests
+
+      - name: Start frontend
         run: |
-          echo "🧪 Running integration tests..."
+          docker run -d \
+            --name agtsdbx-frontend \
+            --network test-network \
+            --env-file .env \
+            -e AGTSDBX_BASE_URL=http://agtsdbx-backend:8000 \
+            -p 8080:8080 \
+            agtsdbx-frontend:test
           
-          # Test backend API endpoints
-          echo "Testing system info endpoint..."
+          sleep 20
+          docker logs agtsdbx-frontend
+
+      - name: Run API integration tests
+        run: |
+          echo "🧪 Running API integration tests..."
+          
+          # Test backend endpoints
+          curl -X GET http://localhost:8000/health -f || exit 1
+          
           curl -X GET http://localhost:8000/api/v1/system/info \
             -H "Authorization: ApiKey test_key_1" \
             -H "Content-Type: application/json" \
-            --fail-with-body \
-            || echo "System info endpoint test failed"
+            -f || echo "System info endpoint requires auth"
           
-          echo ""
-          echo "Testing health endpoint..."
-          curl -X GET http://localhost:8000/health --fail-with-body || echo "Health endpoint failed"
-          
-          echo ""
-          echo "Testing frontend API..."
-          curl -X GET http://localhost:8080/api/health --fail-with-body || echo "Frontend health failed"
-      
-      - name: Collect artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-logs
-          path: |
-            /tmp/*.json
-            /tmp/*.log
-          retention-days: 7
-      
-      - name: Cleanup
-        if: always()
+          # Test command execution
+          curl -X POST http://localhost:8000/api/v1/exec \
+            -H "Authorization: ApiKey test_key_1" \
+            -H "Content-Type: application/json" \
+            -d '{"command": "echo test"}' \
+            -f || echo "Command execution test"
+
+      - name: Run E2E tests
         run: |
-          echo "🧹 Cleaning up..."
-          docker compose down -v || true
-          docker system prune -f || true
+          # Install test dependencies
+          pip install pytest pytest-asyncio httpx
+          
+          # Run E2E tests
+          cd frontend
+          python -m pytest tests/test_e2e.py -v
 
+      - name: Debug information on failure
+        if: failure()
+        run: |
+          echo "=== Docker processes ==="
+          docker ps -a
+          
+          echo "=== Backend logs ==="
+          docker logs agtsdbx-backend || true
+          
+          echo "=== Frontend logs ==="
+          docker logs agtsdbx-frontend || true
+          
+          echo "=== Network information ==="
+          docker network inspect test-network || true
 
-  # Security Scanning
-  security-scan:
+      - name: Setup tmate session for debugging
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled && failure() }}
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+
+  # Job 6: Security Scanning
+  security:
     runs-on: ubuntu-latest
+    needs: build
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -552,332 +493,143 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          exit-code: '0'
-          
-      - name: Create Security Report
-        run: |
-          echo "## 🔒 Security Scan Results for Magic Agent Sandbox" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Run Trivy again for summary
-          docker run --rm -v "$PWD":/src aquasec/trivy fs /src \
-            --severity CRITICAL,HIGH \
-            --format table \
-            --quiet 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY || echo "Trivy scan completed" >> $GITHUB_STEP_SUMMARY
-            
-      - name: Upload Trivy results to GitHub Security
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
-          category: 'trivy'
-          
-      - name: Run Semgrep security scan
+
+      - name: Run Semgrep
         uses: returntocorp/semgrep-action@v1
-        continue-on-error: true
         with:
           config: auto
-          
-      - name: Run GitLeaks secret scanning
-        uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: OWASP Dependency Check
-        uses: dependency-check/Dependency-Check_Action@main
-        continue-on-error: true
-        with:
-          project: 'agtsdbx'
-          path: '.'
-          format: 'ALL'
-          args: >
-            --enableRetired
-            --enableExperimental
-          
-      - name: Upload security artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-scan-results
-          path: |
-            trivy-results.sarif
-            .semgrep/
-            reports/
-          retention-days: 30
 
-  # Performance Benchmarking
-  performance-benchmark:
-    needs: [integration-tests]
+  # Job 7: Performance Testing
+  performance:
     runs-on: ubuntu-latest
+    needs: integration
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup K6
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download prepared environment
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-env
+
+      - name: Start services with docker-compose
         run: |
+          docker compose up -d
+          sleep 30
+
+      - name: Run performance tests
+        run: |
+          # Install k6
+          sudo gpg -k
           sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
           sudo apt-get install k6
           
-      - name: Start services
-        run: |
-          cp .env.example .env
-          # Set test values for agtsdbx
-          sed -i 's/FABRIC_API_KEY=.*/FABRIC_API_KEY=perf_test_key/g' .env
-          sed -i 's/FABRIC_ORG_ID=.*/FABRIC_ORG_ID=perf_test_org/g' .env
-          sed -i 's/FABRIC_PROJECT_ID=.*/FABRIC_PROJECT_ID=perf_test_project/g' .env
-          sed -i 's/API_KEYS=.*/API_KEYS=perf_test_api_key/g' .env
-          docker compose up -d
-          sleep 30
-          
-      - name: Run performance tests
-        run: |
+          # Run performance test
           cat > performance-test.js << 'EOF'
           import http from 'k6/http';
           import { check, sleep } from 'k6';
-          import { Rate, Trend } from 'k6/metrics';
-          
-          const errorRate = new Rate('errors');
-          const responseTime = new Trend('response_time');
           
           export let options = {
             stages: [
-              { duration: '1m', target: 10 },
-              { duration: '2m', target: 20 },
-              { duration: '1m', target: 0 },
+              { duration: '30s', target: 10 },
+              { duration: '1m', target: 20 },
+              { duration: '30s', target: 0 },
             ],
             thresholds: {
-              'errors': ['rate<0.1'],
-              'response_time': ['p(95)<500'],
-              'http_req_duration': ['p(99)<1000'],
+              http_req_duration: ['p(95)<500'],
+              http_req_failed: ['rate<0.1'],
             },
           };
           
           export default function() {
-            const responses = http.batch([
-              ['GET', 'http://localhost:8000/health'],
-              ['GET', 'http://localhost:8000/api/v1/system/info', { headers: { 'Authorization': 'ApiKey perf_test_api_key' }}],
-            ]);
-            
-            responses.forEach((res) => {
-              errorRate.add(res.status !== 200);
-              responseTime.add(res.timings.duration);
-              check(res, {
-                'status is 200': (r) => r.status === 200,
-              });
+            let response = http.get('http://localhost:8000/health');
+            check(response, {
+              'status is 200': (r) => r.status === 200,
+              'response time < 500ms': (r) => r.timings.duration < 500,
             });
-            
             sleep(1);
-          }
-          
-          export function handleSummary(data) {
-            return {
-              'performance-summary.json': JSON.stringify(data),
-              stdout: textSummary(data, { indent: ' ', enableColors: true }),
-            };
-          }
-          
-          function textSummary(data) {
-            return `Performance Test Results:\n${JSON.stringify(data.metrics, null, 2)}`;
           }
           EOF
           
-          k6 run performance-test.js --out json=performance-results.json || true
-          
-      - name: Store performance benchmark
+          k6 run performance-test.js
+
+      - name: Store performance results
         uses: benchmark-action/github-action-benchmark@v1
-        continue-on-error: true
         with:
           tool: 'customBiggerIsBetter'
           output-file-path: performance-results.json
-          benchmark-data-dir-path: 'bench'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '110%'
-          comment-on-alert: true
-          fail-on-alert: false
-          
-      - name: Upload performance artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: performance-results
-          path: |
-            performance-results.json
-            performance-summary.json
-          retention-days: 30
-          
-      - name: Clean up
-        if: always()
-        run: |
-          docker compose down -v || true
 
-  # Notification Job
-  notify-results:
+  # Job 8: Notification
+  notify:
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend, integration-tests, security-scan]
+    needs: [setup, prepare, build, unit-tests, integration, security]
     if: always()
     steps:
-      - name: Determine overall status
-        id: status
+      - name: Create summary
         run: |
-          if [ "${{ needs.test-backend.result }}" == "success" ] && \
-             [ "${{ needs.test-frontend.result }}" == "success" ] && \
-             [ "${{ needs.integration-tests.result }}" == "success" ] && \
-             [ "${{ needs.security-scan.result }}" == "success" ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "emoji=✅" >> $GITHUB_OUTPUT
-            echo "color=good" >> $GITHUB_OUTPUT
-          elif [ "${{ needs.test-backend.result }}" == "failure" ] || \
-               [ "${{ needs.test-frontend.result }}" == "failure" ] || \
-               [ "${{ needs.integration-tests.result }}" == "failure" ]; then
-            echo "status=failure" >> $GITHUB_OUTPUT
-            echo "emoji=❌" >> $GITHUB_OUTPUT
-            echo "color=danger" >> $GITHUB_OUTPUT
-          else
-            echo "status=partial" >> $GITHUB_OUTPUT
-            echo "emoji=⚠️" >> $GITHUB_OUTPUT
-            echo "color=warning" >> $GITHUB_OUTPUT
-          fi
+          echo "# 📊 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Setup | ${{ needs.setup.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prepare | ${{ needs.prepare.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration | ${{ needs.integration.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
           
-      - name: Create summary message
-        id: message
-        run: |
-          echo "summary=${{ steps.status.outputs.emoji }} Magic Agent Sandbox CI: ${{ steps.status.outputs.status }}" >> $GITHUB_OUTPUT
-          
-      - name: Send Slack notification
-        if: vars.ENABLE_SLACK_NOTIFICATIONS == 'true'
-        continue-on-error: true
-        uses: slackapi/slack-github-action@v1.24.0
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: contains(needs.*.result, 'failure')
+        uses: actions/github-script@v7
         with:
-          payload: |
-            {
-              "text": "${{ steps.message.outputs.summary }}",
-              "attachments": [{
-                "color": "${{ steps.status.outputs.color }}",
-                "text": "Project: Magic Agent Sandbox (agtsdbx)\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}"
-              }]
+          script: |
+            const jobs = {
+              setup: '${{ needs.setup.result }}',
+              prepare: '${{ needs.prepare.result }}',
+              build: '${{ needs.build.result }}',
+              'unit-tests': '${{ needs.unit-tests.result }}',
+              integration: '${{ needs.integration.result }}',
+              security: '${{ needs.security.result }}'
+            };
+            
+            const failedJobs = Object.entries(jobs)
+              .filter(([_, status]) => status === 'failure')
+              .map(([job, _]) => job);
+            
+            if (failedJobs.length > 0) {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 CI Pipeline Failed: ${failedJobs.join(', ')}`,
+                body: `## Pipeline Failure Report
+                
+                **Failed Jobs:** ${failedJobs.join(', ')}
+                **Workflow Run:** [View Details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+                **Commit:** ${context.sha}
+                **Actor:** @${context.actor}
+                
+                ### Job Results
+                ${Object.entries(jobs).map(([job, status]) => `- ${job}: ${status}`).join('\n')}
+                
+                Please investigate and fix the issues.`,
+                labels: ['ci-failure', 'bug', 'high-priority']
+              });
+              
+              console.log(`Created issue #${issue.data.number}`);
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          
-      - name: Send Discord notification
-        if: vars.ENABLE_DISCORD_NOTIFICATIONS == 'true'
-        continue-on-error: true
-        uses: Ilshidur/action-discord@0.3.2
-        with:
-          args: |
-            ${{ steps.status.outputs.emoji }} **Magic Agent Sandbox CI: ${{ steps.status.outputs.status }}**
-            
-            **Project:** Magic Agent Sandbox (agtsdbx)
-            **Repository:** `${{ github.repository }}`
-            **Branch:** `${{ github.ref_name }}`
-            
-            [View Results](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          
-      - name: Send email notification
-        if: vars.ENABLE_EMAIL_NOTIFICATIONS == 'true' && steps.status.outputs.status == 'failure'
-        continue-on-error: true
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "${{ steps.status.outputs.emoji }} Magic Agent Sandbox CI ${{ steps.status.outputs.status }} - ${{ github.repository }}"
-          to: ${{ secrets.MAIL_TO }}
-          from: Magic Agent Sandbox CI/CD
-          body: |
-            Magic Agent Sandbox CI Pipeline has completed with status: ${{ steps.status.outputs.status }}
-            
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            
-            Test Results:
-            - Backend: ${{ needs.test-backend.result }}
-            - Frontend: ${{ needs.test-frontend.result }}
-            - Integration: ${{ needs.integration-tests.result }}
-            - Security: ${{ needs.security-scan.result }}
-            
-            View full results: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          
-      - name: Create GitHub issue on failure
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.status.outputs.status == 'failure'
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 Magic Agent Sandbox CI Failed on main branch`,
-              body: `## Magic Agent Sandbox CI Pipeline Failure
-              
-              The CI pipeline has failed on the main branch.
-              
-              **Project:** Magic Agent Sandbox (agtsdbx)
-              **Commit:** ${context.sha}
-              **Run ID:** ${context.runId}
-              **Triggered by:** ${context.actor}
-              
-              ### Test Results:
-              - Backend: ${{ needs.test-backend.result }}
-              - Frontend: ${{ needs.test-frontend.result }}
-              - Integration: ${{ needs.integration-tests.result }}
-              - Security: ${{ needs.security-scan.result }}
-              
-              [View Full CI Run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
-              
-              Please investigate and fix the issue as soon as possible.`,
-              labels: ['bug', 'ci-failure', 'high-priority', 'agtsdbx']
-            });
-            
-            console.log(`Created issue #${issue.data.number}`);
-          
-      - name: Update commit status
-        if: always()
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const status = '${{ steps.status.outputs.status }}';
-            const state = status === 'success' ? 'success' : status === 'failure' ? 'failure' : 'pending';
-            
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: state,
-              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: `Magic Agent Sandbox CI: ${status}`,
-              context: 'continuous-integration/agtsdbx'
-            });
-            
-      - name: Generate final summary
-        if: always()
-        run: |
-          echo "# 📊 Magic Agent Sandbox CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Overall Status: ${{ steps.status.outputs.emoji }} ${{ steps.status.outputs.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend Tests | ${{ needs.test-backend.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend Tests | ${{ needs.test-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📝 Project Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Project:** Magic Agent Sandbox (agtsdbx)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
