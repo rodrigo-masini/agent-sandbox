@@ -1,6 +1,7 @@
 <?php
+// backend/src/Storage/CacheManager.php
 // ==============================================
-// CACHE MANAGER
+// CACHE MANAGER - FIXED VERSION
 // ==============================================
 
 namespace Agtsdbx\Storage;
@@ -79,18 +80,18 @@ class CacheManager
         if ($this->redis) {
             $prefixedKey = $this->prefixKey($key);
             $result = $this->redis->incrBy($prefixedKey, $value);
-
-            // FIX: Check if result is an integer (successful increment)
-            if (is_int($result) && $ttl !== null && $result == $value) {
-                $this->redis->expire($prefixedKey, $ttl);
-            }
             
-            // FIX: Return integer result or 0 on failure
-            return is_int($result) ? $result : 0;
+            // FIX: Properly check the result type
+            if (is_int($result)) {
+                if ($ttl !== null && $result == $value) {
+                    $this->redis->expire($prefixedKey, $ttl);
+                }
+                return $result;
+            }
         }
         
         // File-based increment (not atomic)
-        $current = $this->get($key, 0);
+        $current = (int)$this->get($key, 0);
         $new = $current + $value;
         $this->set($key, $new, $ttl);
         
@@ -102,9 +103,7 @@ class CacheManager
         $success = true;
         
         if ($this->redis) {
-            $deletedCount = $this->redis->del($this->prefixKey($key));
-            // FIX: Check if the result is not false before comparing
-            $success = is_int($deletedCount) && $deletedCount > 0;
+            $success = $this->redis->del($this->prefixKey($key)) > 0;
         }
         
         $file = $this->getCacheFile($key);
@@ -125,8 +124,10 @@ class CacheManager
         
         // Clear file cache
         $files = glob($this->cacheDir . '/*.cache');
-        foreach ($files as $file) {
-            unlink($file);
+        if (is_array($files)) {
+            foreach ($files as $file) {
+                unlink($file);
+            }
         }
         
         return $success;

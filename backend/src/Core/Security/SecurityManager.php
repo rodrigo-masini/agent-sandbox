@@ -7,14 +7,15 @@ use Agtsdbx\Utils\Logger;
 
 class SecurityManager
 {
+    private Config $config;
     private Logger $logger;
     private array $securityConfig;
 
-    public function __construct(Config $config = null, Logger $logger = null)
+    public function __construct(?Config $config = null, ?Logger $logger = null)
     {
-        $this->config = $config ?: Config::getInstance();
-        $this->logger = $logger ?: new Logger($this->config);
-        $this->logger = $logger ?: new Logger($this->config);
+        // FIX: Proper null handling
+        $this->config = $config ?? Config::getInstance();
+        $this->logger = $logger ?? new Logger($this->config);
         $this->securityConfig = $this->config->get('security', []);
     }
 
