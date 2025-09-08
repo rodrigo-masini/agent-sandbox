@@ -18,13 +18,14 @@ class ExecutionControllerTest extends TestCase
     {
         parent::setUp();
         
+        // Create real controller instance, not a mock
+        $this->controller = new ExecutionController();
+        
+        // Create mocks for dependencies
         $this->executionService = Mockery::mock(ExecutionService::class);
         $this->security = Mockery::mock(SecurityManager::class);
         
-        $this->controller = Mockery::mock(ExecutionController::class)->makePartial();
-        $this->controller->shouldAllowMockingProtectedMethods();
-        
-        // Inject mocks
+        // Use reflection to inject mocks into the real controller
         $reflection = new \ReflectionClass($this->controller);
         
         $serviceProp = $reflection->getProperty('executionService');

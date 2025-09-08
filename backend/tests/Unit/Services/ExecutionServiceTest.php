@@ -18,8 +18,8 @@ class ExecutionServiceTest extends TestCase
     {
         $this->config = Mockery::mock(Config::class);
         $this->logger = Mockery::mock(Logger::class);
-        $this->service = new ExecutionService($this->config, $this->logger);
         
+        // Add ALL necessary config expectations
         $this->config->shouldReceive('get')
             ->with('workdir', '/app/WORKDIR')
             ->andReturn('/tmp/test_workdir');
@@ -31,6 +31,24 @@ class ExecutionServiceTest extends TestCase
         $this->config->shouldReceive('get')
             ->with('sandbox.enabled', true)
             ->andReturn(false);
+            
+        // Add expectations for Sandbox config calls
+        $this->config->shouldReceive('get')
+            ->with('sandbox.allow_network', false)
+            ->andReturn(false);
+            
+        $this->config->shouldReceive('get')
+            ->with('workdir', '/app/WORKDIR')
+            ->andReturn('/tmp/test_workdir');
+            
+        $this->config->shouldReceive('get')
+            ->with('sandbox.docker_image', 'alpine:latest')
+            ->andReturn('alpine:latest');
+            
+        // Add logger debug expectation
+        $this->logger->shouldReceive('debug')->withAnyArgs();
+        
+        $this->service = new ExecutionService($this->config, $this->logger);
     }
 
     protected function tearDown(): void

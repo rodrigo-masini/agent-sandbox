@@ -25,8 +25,8 @@ class FileControllerTest extends TestCase
         $this->fileService = Mockery::mock(FileService::class);
         $this->security = Mockery::mock(SecurityManager::class);
         
-        $this->controller = Mockery::mock(FileController::class)->makePartial();
-        $this->controller->shouldAllowMockingProtectedMethods();
+        // Create real controller
+        $this->controller = new FileController();
         
         // Inject mocks using reflection
         $reflection = new \ReflectionClass($this->controller);
@@ -51,7 +51,8 @@ class FileControllerTest extends TestCase
             'body' => json_encode([
                 'filePath' => '/app/WORKDIR/test.txt',
                 'content' => 'test content'
-            ])
+            ]),
+            'user' => 'testuser'
         ];
 
         $this->security->shouldReceive('isPathAllowed')

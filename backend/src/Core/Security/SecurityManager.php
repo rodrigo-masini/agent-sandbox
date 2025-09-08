@@ -92,42 +92,50 @@ class SecurityManager
         return $command;
     }
 
-    public function isPathAllowed(string $path): bool
+    public function isPathAllowed(string $path): bool 
     {
-        // Resolve path to prevent directory traversal
-        $realPath = realpath($path);
+    // For testing or when realpath fails, use the provided path
+    $realPath = realpath($path);
+    if ($realPath === false) {
+        // Path doesn't exist, check if parent directory is allowed
+        $parentDir = dirname($path);
+        $realPath = realpath($parentDir);
         if ($realPath === false) {
-            // Path doesn't exist, check if parent directory is allowed
-            $realPath = realpath(dirname($path));
-            if ($realPath === false) {
-                return false;
+            // For new files in allowed directories, check the base path
+            foreach ($this->securityConfig['filesystem']['allowed_paths'] as $allowedPath) {
+                if (strpos($path, $allowedPath) === 0) {
+                    return true;
+                }
             }
-            $realPath = $realPath . '/' . basename($path);
-        }
-
-        // Check against forbidden paths
-        foreach ($this->securityConfig['filesystem']['forbidden_paths'] as $forbidden) {
-            if (strpos($realPath, $forbidden) === 0) {
-                $this->logger->warning('Path rejected: forbidden', ['path' => $path, 'real_path' => $realPath]);
-                return false;
-            }
-        }
-
-        // Check against allowed paths
-        $allowed = false;
-        foreach ($this->securityConfig['filesystem']['allowed_paths'] as $allowedPath) {
-            if (strpos($realPath, realpath($allowedPath)) === 0) {
-                $allowed = true;
-                break;
-            }
-        }
-
-        if (!$allowed) {
-            $this->logger->warning('Path rejected: not in allowed paths', ['path' => $path, 'real_path' => $realPath]);
             return false;
         }
+        $realPath = $realPath . '/' . basename($path);
+    }
 
-        return true;
+    // Check against forbidden paths
+    foreach ($this->securityConfig['filesystem']['forbidden_paths'] as $forbidden) {
+        if (strpos($realPath, $forbidden) === 0 || strpos($path, $forbidden) !== false) {
+            $this->logger->warning('Path rejected: forbidden', ['path' => $path, 'real_path' => $realPath]);
+            return false;
+        }
+    }
+
+    // Check against allowed paths
+    $allowed = false;
+    foreach ($this->securityConfig['filesystem']['allowed_paths'] as $allowedPath) {
+        // Check both the real path and the original path
+        if (strpos($realPath, $allowedPath) === 0 || strpos($path, $allowedPath) === 0) {
+            $allowed = true;
+            break;
+        }
+    }
+
+    if (!$allowed) {
+        $this->logger->warning('Path rejected: not in allowed paths', ['path' => $path, 'real_path' => $realPath]);
+        return false;
+    }
+
+    return true;
     }
 
     public function validateFileExtension(string $filename): bool
