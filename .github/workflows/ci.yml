@@ -178,7 +178,7 @@ jobs:
           fi
 
       - name: Build ${{ matrix.service }} image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.service }}
           file: ${{ steps.dockerfile.outputs.path }}  # Use the correct path
