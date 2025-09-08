@@ -16,7 +16,7 @@ from src.app.main import AgtsdbxApp
 
 
 @pytest.fixture
-def mock_app():  # NOT async - just a regular fixture
+def mock_app():
     """Create a properly mocked app instance."""
     # Create app instance
     app = AgtsdbxApp()
@@ -41,35 +41,79 @@ def mock_app():  # NOT async - just a regular fixture
     mock_fabric_client.chat_completion = AsyncMock()
     app.fabric_client = mock_fabric_client
     
-    # Mock agtsdbx client
+    # Mock agtsdbx client  
     mock_agtsdbx_client = AsyncMock()
     mock_agtsdbx_client.health_check = AsyncMock(return_value={"status": "healthy"})
     mock_agtsdbx_client.__aenter__ = AsyncMock(return_value=mock_agtsdbx_client)
     mock_agtsdbx_client.__aexit__ = AsyncMock(return_value=None)
     app.agtsdbx_client = mock_agtsdbx_client
     
-    # Mock tools
+    # Properly mock tools with get_tool_definitions method
+    mock_execution_tool = Mock()
+    mock_execution_tool.get_tool_definitions = Mock(return_value=[
+        {
+            "type": "function",
+            "function": {
+                "name": "execute_shell_command",
+                "description": "Execute a shell command",
+                "parameters": {}
+            }
+        }
+    ])
+    
+    mock_file_tool = Mock()
+    mock_file_tool.get_tool_definitions = Mock(return_value=[
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write to a file",
+                "parameters": {}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file",
+                "parameters": {}
+            }
+        }
+    ])
+    
+    mock_system_tool = Mock()
+    mock_system_tool.get_tool_definitions = Mock(return_value=[])
+    
+    mock_docker_tool = Mock()
+    mock_docker_tool.get_tool_definitions = Mock(return_value=[])
+    
+    mock_network_tool = Mock()
+    mock_network_tool.get_tool_definitions = Mock(return_value=[])
+    
     app.tools = {
-        "execution": Mock(),
-        "file": Mock(),
-        "system": Mock(),
-        "docker": Mock(),
-        "network": Mock(),
+        "execution": mock_execution_tool,
+        "file": mock_file_tool,
+        "system": mock_system_tool,
+        "docker": mock_docker_tool,
+        "network": mock_network_tool,
     }
     
     # Initialize messages
     app.messages = []
     
-    return app  # Regular return, not async
+    # Mock the _execute_tool method to return a string
+    app._execute_tool = AsyncMock(return_value="Tool executed successfully")
+    
+    return app
 
 
 class TestE2EWorkflows:
     @pytest.mark.asyncio
     async def test_complete_tool_execution_workflow(self, mock_app):
         """Test the complete workflow from user message to tool execution."""
-        app = mock_app  # Now this is the actual app object, not a coroutine
+        app = mock_app
         
-        # Setup mock responses
+        # Setup mock responses for chat_completion
         app.fabric_client.chat_completion.side_effect = [
             # First call returns tool request
             {
@@ -87,7 +131,7 @@ class TestE2EWorkflows:
                     }
                 }]
             },
-            # Second call returns final response
+            # Second call returns final response after tool execution
             {
                 "choices": [{
                     "message": {
@@ -97,19 +141,22 @@ class TestE2EWorkflows:
             }
         ]
         
-        # Mock tool execution
+        # Mock _execute_tool to track calls
         with patch.object(app, '_execute_tool', new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = "Command executed successfully: test"
             
+            # Call send_message
             response = await app.send_message("Run echo test")
             
+            # Verify the response
             assert "executed the echo command" in response
+            # Verify _execute_tool was called with correct arguments
             mock_execute.assert_called_once_with("execute_shell_command", {"command": "echo test"})
     
     @pytest.mark.asyncio
     async def test_multiple_tool_calls_in_sequence(self, mock_app):
         """Test handling multiple tool calls in a single request."""
-        app = mock_app  # Regular object, not coroutine
+        app = mock_app
         
         tool_calls = [
             {
@@ -128,24 +175,24 @@ class TestE2EWorkflows:
             }
         ]
         
-        with patch.object(app, '_execute_tool', new_callable=AsyncMock) as mock_execute:
-            mock_execute.side_effect = [
-                "File written successfully",
-                "File content: test"
-            ]
-            
-            responses = await app.handle_tool_calls(tool_calls)
-            
-            assert len(responses) == 2
-            assert responses[0]["tool_call_id"] == "call_1"
-            assert "File written successfully" in responses[0]["content"]
-            assert responses[1]["tool_call_id"] == "call_2"
-            assert "File content: test" in responses[1]["content"]
+        # Mock _execute_tool with different responses
+        app._execute_tool.side_effect = [
+            "File written successfully",
+            "File content: test"
+        ]
+        
+        responses = await app.handle_tool_calls(tool_calls)
+        
+        assert len(responses) == 2
+        assert responses[0]["tool_call_id"] == "call_1"
+        assert "File written successfully" in responses[0]["content"]
+        assert responses[1]["tool_call_id"] == "call_2"
+        assert "File content: test" in responses[1]["content"]
     
     @pytest.mark.asyncio
     async def test_tool_execution_error_handling(self, mock_app):
         """Test error handling when tool execution fails."""
-        app = mock_app  # Regular object, not coroutine
+        app = mock_app
         
         tool_calls = [
             {
@@ -156,6 +203,9 @@ class TestE2EWorkflows:
                 }
             }
         ]
+        
+        # The _execute_tool should raise an error for non-existent tool
+        app._execute_tool.side_effect = ValueError("Tool function 'nonexistent_tool' not found")
         
         responses = await app.handle_tool_calls(tool_calls)
         
