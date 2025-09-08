@@ -122,12 +122,14 @@ class TestFileTools:
         assert "File contents of /test/file.txt:" in result
         assert "file contents here" in result
     
+    # Find and replace the test_delete_file_handles_errors method
     @pytest.mark.asyncio
     async def test_delete_file_handles_errors(self, file_tools):
         mock_client = file_tools.agtsdbx_client
         mock_client.delete_file = AsyncMock(side_effect=Exception("Permission denied"))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock()
+        # FIX: Explicitly return None or False to not suppress exceptions
+        mock_client.__aexit__ = AsyncMock(return_value=None)
         
         result = await file_tools.delete_file(file_path="/protected/file.txt")
         
