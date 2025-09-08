@@ -10,11 +10,12 @@ class SecurityManager
     private Logger $logger;
     private array $securityConfig;
 
-    public function __construct(Config $config, Logger $logger = null)
+    public function __construct(Config $config = null, Logger $logger = null)
     {
-        $config = $config ?? Config::getInstance();
-        $this->logger = $logger ?? new Logger($config);
-        $this->securityConfig = $config->get('security', []);
+        $this->config = $config ?: Config::getInstance();
+        $this->logger = $logger ?: new Logger($this->config);
+        $this->logger = $logger ?: new Logger($this->config);
+        $this->securityConfig = $this->config->get('security', []);
     }
 
     public function isCommandAllowed(string $command): bool

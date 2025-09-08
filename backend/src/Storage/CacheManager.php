@@ -80,13 +80,13 @@ class CacheManager
             $prefixedKey = $this->prefixKey($key);
             $result = $this->redis->incrBy($prefixedKey, $value);
 
-            // FIX: Check if the result is not false before comparing
-            if ($result !== false && $ttl !== null && $result == $value) {
+            // FIX: Check if result is an integer (successful increment)
+            if (is_int($result) && $ttl !== null && $result == $value) {
                 $this->redis->expire($prefixedKey, $ttl);
             }
             
-            // FIX: Return the integer result or 0 on failure
-            return $result === false ? 0 : $result;
+            // FIX: Return integer result or 0 on failure
+            return is_int($result) ? $result : 0;
         }
         
         // File-based increment (not atomic)
