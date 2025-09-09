@@ -39,6 +39,8 @@ services:
       - FABRIC_BASE_URL=${FABRIC_BASE_URL:-https://api.telaos.com/v1}
       - FABRIC_MODEL=${FABRIC_MODEL:-wizard}
       - AGTSDBX_BASE_URL=http://agtsdbx:8000
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET=${JWT_SECRET}
       - LOG_LEVEL=info
     depends_on:
       agtsdbx:
