@@ -172,9 +172,9 @@ class Config:
         if not self.get("FABRIC_PROJECT_ID"):
             errors.append("FABRIC_PROJECT_ID is required")
         
-        # Check Pandora URL format
-        pandora_url = self.get("AGTSDBX_BASE_URL")
-        if not pandora_url or not (pandora_url.startswith("http://") or pandora_url.startswith("https://")):
+        # Check AGTSDBX URL format
+        agtsdbx_url = self.get("AGTSDBX_BASE_URL")
+        if not agtsdbx_url or not (agtsdbx_url.startswith("http://") or agtsdbx_url.startswith("https://")):
             errors.append("AGTSDBX_BASE_URL must be a valid HTTP(S) URL")
         
         return len(errors) == 0, errors

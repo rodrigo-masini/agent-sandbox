@@ -24,6 +24,14 @@ from ui.components.terminal import TerminalComponent
 from ui.components.system_monitor import SystemMonitorComponent
 from ui.layouts.main_layout import MainLayout
 
+class AgentSandboxApp:
+    def validate_config(self):
+        required = ['FABRIC_API_KEY', 'FABRIC_ORG_ID', 'FABRIC_PROJECT_ID']
+        missing = [key for key in required if not self.config.get(key)]
+        
+        if missing:
+            raise ValueError(f"Missing required configuration: {', '.join(missing)}")
+
 class AgtsdbxApp:
     def __init__(self):
         self.config = Config()

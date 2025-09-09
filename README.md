@@ -152,7 +152,7 @@ echo "📦 Creating backup in $BACKUP_DIR..."
 # Backup database
 if [ "$DATABASE_URL" != "" ]; then
     echo "Backing up database..."
-    docker exec pandora-db-prod pg_dump -U pandora pandora > "$BACKUP_DIR/database.sql"
+    docker exec agtsdbx-db-prod pg_dump -U agtsdbx agtsdbx > "$BACKUP_DIR/database.sql"
 fi
 
 # Backup WORKDIR
@@ -174,7 +174,7 @@ echo "✅ Backup complete! Location: $BACKUP_DIR"
 ## Project Structure
 
 ```
-pandora-enterprise/
+agtsdbx/
 ├── backend/                # PHP Backend Server
 │   ├── src/               
 │   │   ├── Core/          # Core application components
@@ -301,10 +301,10 @@ View logs with:
 make logs
 
 # Backend logs
-docker logs pandora-backend
+docker logs agtsdbx-backend
 
 # Frontend logs  
-docker logs pandora-frontend
+docker logs agtsdbx-frontend
 ```
 
 ## Production Deployment
@@ -316,10 +316,10 @@ docker logs pandora-frontend
 kubectl apply -f deployment/kubernetes/
 
 # Scale replicas
-kubectl scale deployment pandora-backend --replicas=3
+kubectl scale deployment agtsdbx-backend --replicas=3
 
 # View status
-kubectl get pods -n pandora
+kubectl get pods -n agtsdbx
 ```
 
 ### Docker Swarm
@@ -329,10 +329,10 @@ kubectl get pods -n pandora
 docker swarm init
 
 # Deploy stack
-docker stack deploy -c docker-compose.prod.yml pandora
+docker stack deploy -c docker-compose.prod.yml agtsdbx
 
 # Scale service
-docker service scale pandora_backend=3
+docker service scale agtsdbx_backend=3
 ```
 
 ## Development

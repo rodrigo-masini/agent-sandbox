@@ -21,7 +21,7 @@ class ChatComponent:
                 
                 # Status indicators
                 with ui.row().classes('gap-2'):
-                    self.tela_status = ui.badge('Tela', color='green').classes('text-xs')
+                    self.fabric_status = ui.badge('Fabric', color='green').classes('text-xs')
                     self.agtsdbx_status = ui.badge('Agtsdbx', color='green').classes('text-xs')
                     
             # Chat history container
@@ -131,13 +131,13 @@ class ChatComponent:
         """Update service status indicators."""
         try:
             # Check Fabric status
-            tela_health = await self.app.tela_client.health_check()
-            if tela_health["status"] == "healthy":
-                self.tela_status.props('color=green')
-                self.tela_status.text = 'Fabric ✓'
+            fabric_health = await self.app.fabric_client.health_check()
+            if fabric_health["status"] == "healthy":
+                self.fabric_status.props('color=green')
+                self.fabric_status.text = 'Fabric ✓'
             else:
-                self.tela_status.props('color=red')
-                self.tela_status.text = 'Fabric ✗'
+                self.fabric_status.props('color=red')
+                self.fabric_status.text = 'Fabric ✗'
                 
             # Check Agtsdbx status
             async with self.app.agtsdbx_client as client:
@@ -150,7 +150,7 @@ class ChatComponent:
                     self.agtsdbx_status.text = 'Agtsdbx ✗'
                     
         except Exception as e:
-            self.tela_status.props('color=orange')
-            self.tela_status.text = 'Fabric ?'
+            self.fabric_status.props('color=orange')
+            self.fabric_status.text = 'Fabric ?'
             self.agtsdbx_status.props('color=orange')
             self.agtsdbx_status.text = 'Agtsdbx ?'

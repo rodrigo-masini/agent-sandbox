@@ -223,7 +223,7 @@ class MainLayout:
             
         try:
             from ...tools.docker_tools import DockerTools
-            docker = DockerTools(self.app.pandora_client)
+            docker = DockerTools(self.app.agtsdbx_client)
             result = await docker.docker_list(all=True, format="table")
             
             self.docker_container.clear()

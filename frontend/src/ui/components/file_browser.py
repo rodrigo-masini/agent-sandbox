@@ -56,7 +56,7 @@ class FileBrowserComponent:
         
         try:
             from ...tools.file_tools import FileTools
-            file_tools = FileTools(self.app.pandora_client)
+            file_tools = FileTools(self.app.agtsdbx_client)
             
             result = await file_tools.list_files(path=self.current_path)
             
@@ -124,7 +124,7 @@ class FileBrowserComponent:
                 if name_input.value:
                     file_path = os.path.join(self.current_path, name_input.value)
                     from ...tools.file_tools import FileTools
-                    file_tools = FileTools(self.app.pandora_client)
+                    file_tools = FileTools(self.app.agtsdbx_client)
                     result = await file_tools.write_file(
                         file_path=file_path,
                         content=content_input.value
@@ -150,7 +150,7 @@ class FileBrowserComponent:
                 if name_input.value:
                     folder_path = os.path.join(self.current_path, name_input.value)
                     from ...tools.file_tools import FileTools
-                    file_tools = FileTools(self.app.pandora_client)
+                    file_tools = FileTools(self.app.agtsdbx_client)
                     result = await file_tools.create_directory(path=folder_path)
                     ui.notify(result, type='positive' if 'Successfully' in result else 'negative')
                     await self.load_files()
@@ -187,7 +187,7 @@ class FileBrowserComponent:
         
         try:
             from ...tools.file_tools import FileTools
-            file_tools = FileTools(self.app.pandora_client)
+            file_tools = FileTools(self.app.agtsdbx_client)
             result = await file_tools.read_file(file_path=file_path)
             
             with ui.dialog() as dialog, ui.card().classes('w-96'):
@@ -206,7 +206,7 @@ class FileBrowserComponent:
         
         try:
             from ...tools.file_tools import FileTools
-            file_tools = FileTools(self.app.pandora_client)
+            file_tools = FileTools(self.app.agtsdbx_client)
             result = await file_tools.read_file(file_path=file_path)
             
             # Extract content from result
