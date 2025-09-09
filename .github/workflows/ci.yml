@@ -1,5 +1,3 @@
-name: CI Pipeline
-
 on:
   push:
     branches: [main, develop]
@@ -33,7 +31,6 @@ jobs:
           test -f frontend/requirements/base.txt || (echo "❌ frontend/requirements/base.txt missing" && exit 1)
           test -f docker-compose.yml || (echo "❌ docker-compose.yml missing" && exit 1)
           echo "✅ Repository structure valid"
-
       - name: 📁 Create required directories
         run: |
           echo "Creating backend directories..."
@@ -54,7 +51,6 @@ jobs:
           done
           
           echo "✅ Directories created"
-
       - name: 🔧 Fix PHP code issues
         run: |
           echo "Applying PHP fixes..."
@@ -74,7 +70,6 @@ jobs:
           fi
           
           echo "✅ PHP fixes applied"
-
       - name: 📦 Generate composer.lock
         run: |
           cd backend
@@ -90,7 +85,6 @@ jobs:
               --prefer-dist
           fi
           echo "✅ Composer dependencies ready"
-
       - name: 🔐 Create test environment
         run: |
           cat > .env << 'EOF'
@@ -121,7 +115,6 @@ jobs:
           EOF
           
           echo "✅ Test environment created"
-
       - name: 💾 Cache Composer dependencies
         id: composer-cache
         uses: actions/cache@v4
@@ -177,7 +170,6 @@ jobs:
         run: |
           cd backend
           composer install --prefer-dist --no-progress --no-interaction
-
       - name: 🗄️ Prepare test database
         run: |
           cd backend
@@ -186,7 +178,6 @@ jobs:
           touch storage/test.db
           chmod 666 storage/test.db
           echo "✅ Test database created"
-
       - name: 🧪 Run PHPUnit tests
         run: |
           cd backend
@@ -195,7 +186,6 @@ jobs:
           else
             echo "⚠️ PHPUnit not found, skipping tests"
           fi
-
       - name: 📊 Run PHPStan analysis
         run: |
           cd backend
@@ -235,7 +225,6 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements/dev.txt
           pip install pytest-timeout  # Add timeout plugin
-
       - name: 🧪 Run pytest with timeout
         run: |
           cd frontend
@@ -369,13 +358,11 @@ jobs:
           
           # Verify .env exists
           ls -la .env
-
       - name: 🚀 Start services
         run: |
           docker compose up -d
           echo "Waiting for services to be ready..."
           sleep 20
-
       - name: 🏥 Health checks
         run: |
           echo "Checking backend health..."
@@ -397,7 +384,6 @@ jobs:
             echo "Waiting for frontend... ($i/30)"
             sleep 2
           done
-
       - name: 🧪 Run API tests
         run: |
           # Test backend endpoints
@@ -405,72 +391,67 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: ApiKey test_key_1" \
             -d '{"command": "echo test"}' || true
-
       - name: 📊 Collect logs
         if: always()
         run: |
           docker compose logs --tail=50 > docker-logs.txt
           echo "Docker logs collected"
-
       - name: 🧹 Cleanup
         if: always()
         run: |
           docker compose down -v
 
-# ============================================
-# PRODUCTION READINESS TESTS
-# ============================================
-production-readiness:
-  name: 🎯 Production Readiness Gate
-  runs-on: ubuntu-latest
-  needs: [php-tests, python-tests, docker-build]
-  steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
+  # ============================================
+  # PRODUCTION READINESS TESTS
+  # ============================================
+  production-readiness:
+    name: 🎯 Production Readiness Gate
+    runs-on: ubuntu-latest
+    needs: [php-tests, python-tests, docker-build]
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
 
-    - name: 🐍 Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: 📚 Install test dependencies
-      run: |
-        pip install pytest pytest-asyncio httpx redis psutil
+      - name: 📚 Install test dependencies
+        run: |
+          pip install pytest pytest-asyncio httpx redis psutil
+      - name: 🚀 Start services
+        run: |
+          docker compose up -d
+          echo "Waiting for services to be ready..."
+          sleep 20  # Give services time to fully start
+      - name: 🎯 Run Production Readiness Assessment
+        env:
+          # Set test environment variables
+          FABRIC_API_KEY: ${{ secrets.FABRIC_API_KEY || 'test_api_key_min_20_chars_long' }}
+          FABRIC_ORG_ID: ${{ secrets.FABRIC_ORG_ID || 'test_org_id' }}
+          FABRIC_PROJECT_ID: ${{ secrets.FABRIC_PROJECT_ID || 'test_project_id' }}
+          DATABASE_URL: sqlite:///app/storage/test.db
+          REDIS_HOST: localhost
+          JWT_SECRET: test_jwt_secret_for_ci_only_32_chars
+          SECRET_KEY: test_secret_key_for_ci_only_32_chars
+          AGTSDBX_BASE_URL: http://localhost:8000
+          FRONTEND_URL: http://localhost:8080
+          CONTAINER_MEMORY_LIMIT: 1024
+          DOCKER_ENABLED: false  # Disable in CI
+        run: |
+          python tests/run_production_readiness.py --report --verbose
+      - name: 📤 Upload readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-readiness-report
+          path: production_readiness_report.json
 
-    - name: 🚀 Start services
-      run: |
-        docker compose up -d
-        echo "Waiting for services to be ready..."
-        sleep 20  # Give services time to fully start
-
-    - name: 🎯 Run Production Readiness Assessment
-      env:
-        # Set test environment variables
-        FABRIC_API_KEY: ${{ secrets.FABRIC_API_KEY || 'test_api_key_min_20_chars_long' }}
-        FABRIC_ORG_ID: ${{ secrets.FABRIC_ORG_ID || 'test_org_id' }}
-        FABRIC_PROJECT_ID: ${{ secrets.FABRIC_PROJECT_ID || 'test_project_id' }}
-        DATABASE_URL: sqlite:///app/storage/test.db
-        REDIS_HOST: localhost
-        JWT_SECRET: test_jwt_secret_for_ci_only_32_chars
-        SECRET_KEY: test_secret_key_for_ci_only_32_chars
-        AGTSDBX_BASE_URL: http://localhost:8000
-        FRONTEND_URL: http://localhost:8080
-        CONTAINER_MEMORY_LIMIT: 1024
-        DOCKER_ENABLED: false  # Disable in CI
-      run: |
-        python tests/run_production_readiness.py --report --verbose
-
-    - name: 📤 Upload readiness report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: production-readiness-report
-        path: production_readiness_report.json
-
-    - name: 🧹 Cleanup
-      if: always()
-      run: |
-        docker compose down -v
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          docker compose down -v
 
   # ============================================
   # SECURITY SCAN
