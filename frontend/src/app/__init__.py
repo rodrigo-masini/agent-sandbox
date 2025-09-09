@@ -1,1 +1,1 @@
-"""Application entry point module."""
+from . import main  # noqa: F401
