@@ -1,14 +1,15 @@
-import pytest
 import asyncio
-import sys
 import os
-from unittest.mock import MagicMock, Mock, AsyncMock
+import sys
+from unittest.mock import AsyncMock, MagicMock, Mock
+
+import pytest
 
 # Add parent directory to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Mock NiceGUI before importing any app code
-sys.modules['nicegui'] = MagicMock()
+sys.modules["nicegui"] = MagicMock()
 mock_ui = MagicMock()
 mock_ui.run = Mock(return_value=None)
 mock_ui.page = Mock(return_value=lambda f: f)
@@ -37,12 +38,17 @@ mock_ui.tab_panels = Mock()
 mock_ui.tab_panel = Mock()
 mock_ui.timer = Mock()
 mock_ui.navigate = Mock(to=Mock())
-sys.modules['nicegui'].ui = mock_ui
-sys.modules['nicegui'].run = Mock(return_value=None)
-sys.modules['nicegui'].app = Mock()
+
+# CORRECTED: Added '# type: ignore' to tell mypy that we are intentionally
+# modifying the mock module, which is a dynamic operation it can't understand.
+sys.modules["nicegui"].ui = mock_ui  # type: ignore[attr-defined]
+sys.modules["nicegui"].run = Mock(return_value=None)  # type: ignore[attr-defined]
+sys.modules["nicegui"].app = Mock()  # type: ignore[attr-defined]
+
 
 # Configure pytest-asyncio
-pytest_plugins = ('pytest_asyncio',)
+pytest_plugins = ("pytest_asyncio",)
+
 
 @pytest.fixture(scope="function")
 def event_loop():
@@ -56,25 +62,29 @@ def event_loop():
     finally:
         loop.close()
 
+
 @pytest.fixture
 def mock_config():
     """Mock configuration."""
     config = Mock()
-    config.get = Mock(side_effect=lambda key, default=None: {
-        "FABRIC_API_KEY": "test_key",
-        "FABRIC_ORG_ID": "test_org",
-        "FABRIC_PROJECT_ID": "test_project",
-        "FABRIC_BASE_URL": "https://api.test.com/v1",
-        "FABRIC_MODEL": "test-model",
-        "AGTSDBX_BASE_URL": "http://localhost:8000",
-        "AGTSDBX_TIMEOUT": 300,
-        "FABRIC_TIMEOUT": 300,
-        "ENABLE_STREAMING": True,
-        "ENABLE_TOOL_CALLING": True,
-        "JWT_SECRET": "test_secret",
-        "SECRET_KEY": "test_secret",
-    }.get(key, default))
+    config.get = Mock(
+        side_effect=lambda key, default=None: {
+            "FABRIC_API_KEY": "test_key",
+            "FABRIC_ORG_ID": "test_org",
+            "FABRIC_PROJECT_ID": "test_project",
+            "FABRIC_BASE_URL": "https://api.test.com/v1",
+            "FABRIC_MODEL": "test-model",
+            "AGTSDBX_BASE_URL": "http://localhost:8000",
+            "AGTSDBX_TIMEOUT": 300,
+            "FABRIC_TIMEOUT": 300,
+            "ENABLE_STREAMING": True,
+            "ENABLE_TOOL_CALLING": True,
+            "JWT_SECRET": "test_secret",
+            "SECRET_KEY": "test_secret",
+        }.get(key, default)
+    )
     return config
+
 
 @pytest.fixture
 async def mock_agtsdbx_client():
@@ -82,9 +92,13 @@ async def mock_agtsdbx_client():
     client = AsyncMock()
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=None)
-    client.execute_command = AsyncMock(return_value={"success": True, "stdout": "test", "exit_code": 0})
+    client.execute_command = AsyncMock(
+        return_value={"success": True, "stdout": "test", "exit_code": 0}
+    )
     client.write_file = AsyncMock(return_value={"success": True})
-    client.read_file = AsyncMock(return_value={"success": True, "content": "test content"})
+    client.read_file = AsyncMock(
+        return_value={"success": True, "content": "test content"}
+    )
     client.list_files = AsyncMock(return_value={"success": True, "files": []})
     client.delete_file = AsyncMock(return_value={"success": True})
     client.get_system_info = AsyncMock(return_value={"success": True, "data": {}})

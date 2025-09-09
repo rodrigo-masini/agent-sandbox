@@ -1,12 +1,12 @@
-import os
-import asyncio
-from typing import Dict, List, Optional, AsyncGenerator
-from openai import AsyncOpenAI
-from dataclasses import dataclass
-import httpx
-import json
 import time
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+
+import httpx
+from openai import AsyncOpenAI
+
 from .base_client import BaseClient
+
 
 @dataclass
 class FabricConfig:
@@ -18,6 +18,7 @@ class FabricConfig:
     timeout: int = 300
     max_retries: int = 3
     retry_delay: float = 1.0
+
 
 class FabricClient(BaseClient):
     def __init__(self, config: FabricConfig):
@@ -34,41 +35,46 @@ class FabricClient(BaseClient):
             "OpenAI-Project": config.project_id,
         }
 
+    # CORRECTED: The return type is now a Union to reflect that it can return
+    # a single dictionary OR a stream (AsyncGenerator).
     async def chat_completion(
         self,
-        messages: List[Dict],
-        tools: Optional[List[Dict]] = None,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
         stream: bool = False,
-        **kwargs
-    ) -> Dict:
+        **kwargs,
+    ) -> Union[Dict[str, Any], AsyncGenerator[Dict[str, Any], None]]:
         """Create a chat completion with enhanced error handling and metrics."""
         start_time = time.time()
-        
+
         try:
-            params = {
+            params: Dict[str, Any] = {
                 "model": self.config.model,
                 "messages": messages,
                 "extra_headers": self.headers,
                 "stream": stream,
-                **kwargs
+                **kwargs,
             }
-            
+
             if tools:
                 params["tools"] = tools
                 params["tool_choice"] = tool_choice
 
             if stream:
-                return await self._stream_completion(params)
+                # CORRECTED: An async generator should be returned directly, not awaited.
+                return self._stream_completion(params)
             else:
                 response = await self.client.chat.completions.create(**params)
                 return self._format_response(response, time.time() - start_time)
-                
+
         except Exception as e:
             self.logger.error(f"Chat completion failed: {e}")
             raise
 
-    async def _stream_completion(self, params: Dict) -> AsyncGenerator[Dict, None]:
+    async def _stream_completion(
+        self, params: Dict[str, Any]
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """Handle streaming responses with proper error handling."""
         try:
             stream = await self.client.chat.completions.create(**params)
@@ -78,7 +84,7 @@ class FabricClient(BaseClient):
             self.logger.error(f"Streaming failed: {e}")
             raise
 
-    def _format_response(self, response, duration: float) -> Dict:
+    def _format_response(self, response, duration: float) -> Dict[str, Any]:
         """Format the response with additional metadata."""
         return {
             "choices": [
@@ -92,33 +98,37 @@ class FabricClient(BaseClient):
                                 "type": tc.type,
                                 "function": {
                                     "name": tc.function.name,
-                                    "arguments": tc.function.arguments
-                                }
-                            } for tc in (choice.message.tool_calls or [])
-                        ] if choice.message.tool_calls else None
+                                    "arguments": tc.function.arguments,
+                                },
+                            }
+                            for tc in (choice.message.tool_calls or [])
+                        ]
+                        if choice.message.tool_calls
+                        else None,
                     },
-                    "finish_reason": choice.finish_reason
-                } for choice in response.choices
+                    "finish_reason": choice.finish_reason,
+                }
+                for choice in response.choices
             ],
             "usage": {
                 "prompt_tokens": response.usage.prompt_tokens,
                 "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
+                "total_tokens": response.usage.total_tokens,
             },
             "metadata": {
                 "duration": duration,
                 "model": response.model,
                 "id": response.id,
-                "created": response.created
-            }
+                "created": response.created,
+            },
         }
 
-    def _format_stream_chunk(self, chunk) -> Dict:
+    def _format_stream_chunk(self, chunk) -> Dict[str, Any]:
         """Format streaming chunk with consistent structure."""
         choice = chunk.choices[0] if chunk.choices else None
         if not choice:
             return {"type": "chunk", "content": ""}
-            
+
         delta = choice.delta
         return {
             "type": "chunk",
@@ -129,19 +139,29 @@ class FabricClient(BaseClient):
                     "type": tc.type,
                     "function": {
                         "name": tc.function.name if tc.function else None,
-                        "arguments": tc.function.arguments if tc.function else None
-                    }
-                } for tc in (delta.tool_calls or [])
-            ] if delta.tool_calls else None,
-            "finish_reason": choice.finish_reason
+                        "arguments": tc.function.arguments if tc.function else None,
+                    },
+                }
+                for tc in (delta.tool_calls or [])
+            ]
+            if delta.tool_calls
+            else None,
+            "finish_reason": choice.finish_reason,
         }
 
-    async def health_check(self) -> Dict:
+    async def health_check(self) -> Dict[str, Any]:
         """Check the health of the Fabric service."""
         try:
-            response = await self.chat_completion([
-                {"role": "user", "content": "Hello"}
-            ], timeout=10)
-            return {"status": "healthy", "response_time": response["metadata"]["duration"]}
+            # This call correctly uses stream=False, so it will get a Dict.
+            response = await self.chat_completion(
+                [{"role": "user", "content": "Hello"}], timeout=10
+            )
+            # We need to assert that the response is a dictionary for mypy.
+            if isinstance(response, dict):
+                return {
+                    "status": "healthy",
+                    "response_time": response["metadata"]["duration"],
+                }
+            return {"status": "unhealthy", "error": "Invalid response type"}
         except Exception as e:
             return {"status": "unhealthy", "error": str(e)}

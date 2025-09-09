@@ -2,13 +2,14 @@
 # NETWORK TOOLS IMPLEMENTATION
 # ==============================================
 
-from typing import Dict, List, Optional
-import json
+from typing import Dict, List
+
 from .base_tool import BaseTool
+
 
 class NetworkTools(BaseTool):
     """Network operation tools."""
-    
+
     def get_tool_definitions(self) -> List[Dict]:
         return [
             {
@@ -19,34 +20,38 @@ class NetworkTools(BaseTool):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "url": {
-                                "type": "string",
-                                "description": "URL to request"
-                            },
+                            "url": {"type": "string", "description": "URL to request"},
                             "method": {
                                 "type": "string",
-                                "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+                                "enum": [
+                                    "GET",
+                                    "POST",
+                                    "PUT",
+                                    "DELETE",
+                                    "PATCH",
+                                    "HEAD",
+                                ],
                                 "description": "HTTP method",
-                                "default": "GET"
+                                "default": "GET",
                             },
                             "headers": {
                                 "type": "object",
                                 "description": "Request headers",
-                                "default": {}
+                                "default": {},
                             },
                             "data": {
                                 "type": "string",
-                                "description": "Request body data"
+                                "description": "Request body data",
                             },
                             "timeout": {
                                 "type": "integer",
                                 "description": "Request timeout in seconds",
-                                "default": 30
-                            }
+                                "default": 30,
+                            },
                         },
-                        "required": ["url"]
-                    }
-                }
+                        "required": ["url"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -58,21 +63,21 @@ class NetworkTools(BaseTool):
                         "properties": {
                             "url": {
                                 "type": "string",
-                                "description": "URL to download from"
+                                "description": "URL to download from",
                             },
                             "output_path": {
                                 "type": "string",
-                                "description": "Path to save the downloaded file"
+                                "description": "Path to save the downloaded file",
                             },
                             "timeout": {
                                 "type": "integer",
                                 "description": "Download timeout in seconds",
-                                "default": 300
-                            }
+                                "default": 300,
+                            },
                         },
-                        "required": ["url", "output_path"]
-                    }
-                }
+                        "required": ["url", "output_path"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -84,21 +89,21 @@ class NetworkTools(BaseTool):
                         "properties": {
                             "host": {
                                 "type": "string",
-                                "description": "Hostname or IP address"
+                                "description": "Hostname or IP address",
                             },
                             "port": {
                                 "type": "integer",
-                                "description": "Port number to check"
+                                "description": "Port number to check",
                             },
                             "timeout": {
                                 "type": "integer",
                                 "description": "Connection timeout in seconds",
-                                "default": 5
-                            }
+                                "default": 5,
+                            },
                         },
-                        "required": ["host", "port"]
-                    }
-                }
+                        "required": ["host", "port"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -110,21 +115,21 @@ class NetworkTools(BaseTool):
                         "properties": {
                             "domain": {
                                 "type": "string",
-                                "description": "Domain name to lookup"
+                                "description": "Domain name to lookup",
                             },
                             "record_type": {
                                 "type": "string",
                                 "enum": ["A", "AAAA", "MX", "TXT", "NS", "CNAME"],
                                 "description": "DNS record type",
-                                "default": "A"
-                            }
+                                "default": "A",
+                            },
                         },
-                        "required": ["domain"]
-                    }
-                }
-            }
+                        "required": ["domain"],
+                    },
+                },
+            },
         ]
-    
+
     async def http_request(self, **kwargs) -> str:
         """Make an HTTP request."""
         try:
@@ -133,73 +138,79 @@ class NetworkTools(BaseTool):
             headers = kwargs.get("headers", {})
             data = kwargs.get("data", None)
             timeout = kwargs.get("timeout", 30)
-            
+
             async with self.agtsdbx_client as client:
-                result = await client.network_request(url, method, headers, data, {"timeout": timeout})
-                
+                result = await client.network_request(
+                    url, method, headers, data, {"timeout": timeout}
+                )
+
             if result.get("success"):
                 response_data = result.get("data", {})
                 status = response_data.get("status_code", "unknown")
                 body = response_data.get("body", "")
-                
-                return f"HTTP {method} {url}\nStatus: {status}\n\nResponse:\n{body[:1000]}"
+
+                return (
+                    f"HTTP {method} {url}\nStatus: {status}\n\nResponse:\n{body[:1000]}"
+                )
             else:
                 return f"Request failed: {result.get('error', 'Unknown error')}"
-                
+
         except Exception as e:
             return f"Error making HTTP request: {str(e)}"
-    
+
     async def download_file(self, **kwargs) -> str:
         """Download a file from URL."""
         try:
             url = kwargs.get("url")
             output_path = kwargs.get("output_path")
             timeout = kwargs.get("timeout", 300)
-            
+
             command = f"curl -L -o {output_path} --max-time {timeout} {url}"
-            
+
             async with self.agtsdbx_client as client:
-                result = await client.execute_command(command, {"timeout": timeout + 10})
-                
+                result = await client.execute_command(
+                    command, {"timeout": timeout + 10}
+                )
+
             if result.get("exit_code", 0) == 0:
                 return f"Successfully downloaded file to: {output_path}"
             else:
                 return f"Download failed: {result.get('stderr', 'Unknown error')}"
-                
+
         except Exception as e:
             return f"Error downloading file: {str(e)}"
-    
+
     async def check_port(self, **kwargs) -> str:
         """Check if a port is open."""
         try:
             host = kwargs.get("host")
             port = kwargs.get("port")
             timeout = kwargs.get("timeout", 5)
-            
+
             command = f"timeout {timeout} nc -zv {host} {port}"
-            
+
             async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": timeout + 2})
-                
+
             if result.get("exit_code", 0) == 0:
                 return f"Port {port} on {host} is OPEN"
             else:
                 return f"Port {port} on {host} is CLOSED or unreachable"
-                
+
         except Exception as e:
             return f"Error checking port: {str(e)}"
-    
+
     async def dns_lookup(self, **kwargs) -> str:
         """Perform DNS lookup."""
         try:
             domain = kwargs.get("domain")
             record_type = kwargs.get("record_type", "A")
-            
+
             command = f"dig +short {domain} {record_type}"
-            
+
             async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, {"timeout": 10})
-                
+
             if result.get("exit_code", 0) == 0:
                 output = result.get("stdout", "No records found").strip()
                 if output:
@@ -208,6 +219,6 @@ class NetworkTools(BaseTool):
                     return f"No {record_type} records found for {domain}"
             else:
                 return f"DNS lookup failed: {result.get('stderr', 'Unknown error')}"
-                
+
         except Exception as e:
             return f"Error performing DNS lookup: {str(e)}"

@@ -2,13 +2,14 @@
 # FILE TOOLS IMPLEMENTATION
 # ==============================================
 
-from typing import Dict, List, Optional
-import json
+from typing import Dict, List
+
 from .base_tool import BaseTool
+
 
 class FileTools(BaseTool):
     """File operation tools for Agtsdbx."""
-    
+
     def get_tool_definitions(self) -> List[Dict]:
         return [
             {
@@ -21,21 +22,21 @@ class FileTools(BaseTool):
                         "properties": {
                             "file_path": {
                                 "type": "string",
-                                "description": "Path to the file to write"
+                                "description": "Path to the file to write",
                             },
                             "content": {
                                 "type": "string",
-                                "description": "Content to write to the file"
+                                "description": "Content to write to the file",
                             },
                             "append": {
                                 "type": "boolean",
                                 "description": "Whether to append to existing file",
-                                "default": False
-                            }
+                                "default": False,
+                            },
                         },
-                        "required": ["file_path", "content"]
-                    }
-                }
+                        "required": ["file_path", "content"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -47,17 +48,17 @@ class FileTools(BaseTool):
                         "properties": {
                             "file_path": {
                                 "type": "string",
-                                "description": "Path to the file to read"
+                                "description": "Path to the file to read",
                             },
                             "encoding": {
                                 "type": "string",
                                 "description": "File encoding",
-                                "default": "utf-8"
-                            }
+                                "default": "utf-8",
+                            },
                         },
-                        "required": ["file_path"]
-                    }
-                }
+                        "required": ["file_path"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -70,22 +71,22 @@ class FileTools(BaseTool):
                             "path": {
                                 "type": "string",
                                 "description": "Directory path to list",
-                                "default": "."
+                                "default": ".",
                             },
                             "recursive": {
                                 "type": "boolean",
                                 "description": "Whether to list recursively",
-                                "default": False
+                                "default": False,
                             },
                             "pattern": {
                                 "type": "string",
                                 "description": "Filter pattern (glob style)",
-                                "default": "*"
-                            }
+                                "default": "*",
+                            },
                         },
-                        "required": []
-                    }
-                }
+                        "required": [],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -97,12 +98,12 @@ class FileTools(BaseTool):
                         "properties": {
                             "file_path": {
                                 "type": "string",
-                                "description": "Path to the file or directory to delete"
+                                "description": "Path to the file or directory to delete",
                             }
                         },
-                        "required": ["file_path"]
-                    }
-                }
+                        "required": ["file_path"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -114,74 +115,77 @@ class FileTools(BaseTool):
                         "properties": {
                             "path": {
                                 "type": "string",
-                                "description": "Path of the directory to create"
+                                "description": "Path of the directory to create",
                             },
                             "parents": {
                                 "type": "boolean",
                                 "description": "Create parent directories if needed",
-                                "default": True
-                            }
+                                "default": True,
+                            },
                         },
-                        "required": ["path"]
-                    }
-                }
-            }
+                        "required": ["path"],
+                    },
+                },
+            },
         ]
-    
+
     async def write_file(self, **kwargs) -> str:
         """Write content to a file."""
         try:
             file_path = kwargs.get("file_path")
             content = kwargs.get("content")
             append = kwargs.get("append", False)
-            
+
             options = {"append": append}
-            
+
             async with self.agtsdbx_client as client:
                 result = await client.write_file(file_path, content, options)
-                
+
                 if result.get("success"):
                     return f"Successfully wrote to file: {file_path}"
                 else:
-                    return f"Failed to write file: {result.get('error', 'Unknown error')}"
-                
+                    return (
+                        f"Failed to write file: {result.get('error', 'Unknown error')}"
+                    )
+
         except Exception as e:
             return f"Error writing file: {str(e)}"
-    
+
     async def read_file(self, **kwargs) -> str:
         """Read file contents."""
         try:
             file_path = kwargs.get("file_path")
             encoding = kwargs.get("encoding", "utf-8")
-            
+
             options = {"encoding": encoding}
-            
+
             async with self.agtsdbx_client as client:
                 result = await client.read_file(file_path, options)
-                
+
                 if result.get("success"):
-                    return f"File contents of {file_path}:\n\n{result.get('content', '')}"
+                    return (
+                        f"File contents of {file_path}:\n\n{result.get('content', '')}"
+                    )
                 else:
-                    return f"Failed to read file: {result.get('error', 'Unknown error')}"
-                
+                    return (
+                        f"Failed to read file: {result.get('error', 'Unknown error')}"
+                    )
+
         except Exception as e:
             return f"Error reading file: {str(e)}"
-    
+
     async def list_files(self, **kwargs) -> str:
         """List files in directory."""
         try:
             path = kwargs.get("path", ".")
             recursive = kwargs.get("recursive", False)
             pattern = kwargs.get("pattern", "*")
-            
-            options = {
-                "recursive": recursive,
-                "pattern": pattern
-            }
-            
+
+            options = {"recursive": recursive, "pattern": pattern}
+
             async with self.agtsdbx_client as client:
                 result = await client.list_files(path, options)
-                
+
                 if result.get("success"):
                     files = result.get("files", [])
                     if files:
@@ -190,42 +194,46 @@ class FileTools(BaseTool):
                     else:
                         return f"No files found in {path}"
                 else:
-                    return f"Failed to list files: {result.get('error', 'Unknown error')}"
-                
+                    return (
+                        f"Failed to list files: {result.get('error', 'Unknown error')}"
+                    )
+
         except Exception as e:
             return f"Error listing files: {str(e)}"
-    
+
     async def delete_file(self, **kwargs) -> str:
         """Delete a file."""
         try:
             file_path = kwargs.get("file_path")
-            
+
             async with self.agtsdbx_client as client:
                 result = await client.delete_file(file_path)
-                
+
                 if result.get("success"):
                     return f"Successfully deleted: {file_path}"
                 else:
-                    return f"Failed to delete file: {result.get('error', 'Unknown error')}"
-                
+                    return (
+                        f"Failed to delete file: {result.get('error', 'Unknown error')}"
+                    )
+
         except Exception as e:
             return f"Error deleting file: {str(e)}"
-    
+
     async def create_directory(self, **kwargs) -> str:
         """Create a directory."""
         try:
             path = kwargs.get("path")
             parents = kwargs.get("parents", True)
-            
+
             command = f"mkdir {'-p ' if parents else ''}{path}"
-            
+
             async with self.agtsdbx_client as client:
                 result = await client.execute_command(command)
-                
+
                 if result.get("exit_code", 0) == 0:
                     return f"Successfully created directory: {path}"
                 else:
                     return f"Failed to create directory: {result.get('stderr', 'Unknown error')}"
-                
+
         except Exception as e:
             return f"Error creating directory: {str(e)}"

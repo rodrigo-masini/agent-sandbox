@@ -1,21 +1,30 @@
-import os
 import asyncio
-from typing import Dict, List, Optional, Any
-import httpx
-import json
+import os
 import time
+from typing import Any, Dict, Optional
+
+import httpx
+
 from .base_client import BaseClient
 
+
 class AgtsdbxClient(BaseClient):
-    def __init__(self, base_url: str = None, timeout: int = 300):
+    def __init__(self, base_url: Optional[str] = None, timeout: int = 300):
         super().__init__(timeout)
-        self.base_url = base_url or os.getenv("AGTSDBX_BASE_URL", "http://localhost:8000")
-        self.session = None
+
+        # CORRECTED: Rewrote the assignment to be more explicit for mypy.
+        # This pattern ensures that self.base_url is always a string.
+        resolved_url = base_url
+        if not resolved_url:  # This handles both None and empty strings
+            resolved_url = os.getenv("AGTSDBX_BASE_URL", "http://localhost:8000")
+
+        self.base_url: str = resolved_url
+        self.session: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
         self.session = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=100)
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=100),
         )
         return self
 
@@ -27,91 +36,69 @@ class AgtsdbxClient(BaseClient):
         self,
         command: str,
         options: Optional[Dict] = None,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> Dict:
         """Execute a shell command with enhanced options and error handling."""
-        payload = {
-            "command": command,
-            "guideFollowed": True,
-            "options": options or {}
-        }
-        
+        payload = {"command": command, "guideFollowed": True, "options": options or {}}
+
         start_time = time.time()
-        
+
         try:
             response = await self._make_request(
-                "POST", 
-                "/api/v1/exec", 
-                json=payload,
-                timeout=timeout or self.timeout
+                "POST", "/api/v1/exec", json=payload, timeout=timeout or self.timeout
             )
-            
+
             duration = time.time() - start_time
-            
+
             return {
                 **response,
                 "metadata": {
                     "duration": duration,
                     "command": command,
-                    "timestamp": time.time()
-                }
+                    "timestamp": time.time(),
+                },
             }
-            
+
         except Exception as e:
             self.logger.error(f"Command execution failed: {e}")
             raise
 
     async def write_file(
-        self,
-        file_path: str,
-        content: str,
-        options: Optional[Dict] = None
+        self, file_path: str, content: str, options: Optional[Dict] = None
     ) -> Dict:
         """Write content to a file with enhanced options."""
-        payload = {
-            "filePath": file_path,
-            "content": content,
-            "options": options or {}
-        }
-        
+        payload = {"filePath": file_path, "content": content, "options": options or {}}
+
         try:
-            response = await self._make_request("POST", "/api/v1/file/write", json=payload)
+            response = await self._make_request(
+                "POST", "/api/v1/file/write", json=payload
+            )
             return response
         except Exception as e:
             self.logger.error(f"File write failed: {e}")
             raise
 
-    async def read_file(
-        self,
-        file_path: str,
-        options: Optional[Dict] = None
-    ) -> Dict:
+    async def read_file(self, file_path: str, options: Optional[Dict] = None) -> Dict:
         """Read file content with enhanced options."""
-        payload = {
-            "filePath": file_path,
-            "options": options or {}
-        }
-        
+        payload = {"filePath": file_path, "options": options or {}}
+
         try:
-            response = await self._make_request("POST", "/api/v1/file/read", json=payload)
+            response = await self._make_request(
+                "POST", "/api/v1/file/read", json=payload
+            )
             return response
         except Exception as e:
             self.logger.error(f"File read failed: {e}")
             raise
 
-    async def list_files(
-        self,
-        path: str = ".",
-        options: Optional[Dict] = None
-    ) -> Dict:
+    async def list_files(self, path: str = ".", options: Optional[Dict] = None) -> Dict:
         """List files in a directory with enhanced filtering options."""
-        payload = {
-            "path": path,
-            "options": options or {}
-        }
-        
+        payload = {"path": path, "options": options or {}}
+
         try:
-            response = await self._make_request("POST", "/api/v1/file/list", json=payload)
+            response = await self._make_request(
+                "POST", "/api/v1/file/list", json=payload
+            )
             return response
         except Exception as e:
             self.logger.error(f"File listing failed: {e}")
@@ -120,9 +107,11 @@ class AgtsdbxClient(BaseClient):
     async def delete_file(self, file_path: str) -> Dict:
         """Delete a file or directory."""
         payload = {"filePath": file_path}
-        
+
         try:
-            response = await self._make_request("DELETE", "/api/v1/file/delete", json=payload)
+            response = await self._make_request(
+                "DELETE", "/api/v1/file/delete", json=payload
+            )
             return response
         except Exception as e:
             self.logger.error(f"File deletion failed: {e}")
@@ -147,20 +136,15 @@ class AgtsdbxClient(BaseClient):
             raise
 
     async def docker_run(
-        self,
-        image: str,
-        command: Optional[str] = None,
-        options: Optional[Dict] = None
+        self, image: str, command: Optional[str] = None, options: Optional[Dict] = None
     ) -> Dict:
         """Run a Docker container."""
-        payload = {
-            "image": image,
-            "command": command,
-            "options": options or {}
-        }
-        
+        payload = {"image": image, "command": command, "options": options or {}}
+
         try:
-            response = await self._make_request("POST", "/api/v1/docker/run", json=payload)
+            response = await self._make_request(
+                "POST", "/api/v1/docker/run", json=payload
+            )
             return response
         except Exception as e:
             self.logger.error(f"Docker run failed: {e}")
@@ -181,7 +165,7 @@ class AgtsdbxClient(BaseClient):
         method: str = "GET",
         headers: Optional[Dict] = None,
         data: Optional[Any] = None,
-        options: Optional[Dict] = None
+        options: Optional[Dict] = None,
     ) -> Dict:
         """Make a network request through Agtsdbx."""
         payload = {
@@ -189,11 +173,13 @@ class AgtsdbxClient(BaseClient):
             "method": method,
             "headers": headers or {},
             "data": data,
-            "options": options or {}
+            "options": options or {},
         }
-        
+
         try:
-            response = await self._make_request("POST", "/api/v1/network/request", json=payload)
+            response = await self._make_request(
+                "POST", "/api/v1/network/request", json=payload
+            )
             return response
         except Exception as e:
             self.logger.error(f"Network request failed: {e}")
@@ -208,38 +194,35 @@ class AgtsdbxClient(BaseClient):
             return {"status": "unhealthy", "error": str(e)}
 
     async def _make_request(
-        self,
-        method: str,
-        endpoint: str,
-        timeout: Optional[int] = None,
-        **kwargs
+        self, method: str, endpoint: str, timeout: Optional[int] = None, **kwargs
     ) -> Dict:
         """Make an HTTP request with retry logic and error handling."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
-            
+
         url = f"{self.base_url}{endpoint}"
-        
-        for attempt in range(self.max_retries):
+
+        for attempt in range(self.max_retries + 1):
             try:
                 response = await self.session.request(
-                    method,
-                    url,
-                    timeout=timeout or self.timeout,
-                    **kwargs
+                    method, url, timeout=timeout or self.timeout, **kwargs
                 )
                 response.raise_for_status()
-                
-                if response.headers.get("content-type", "").startswith("application/json"):
+
+                if response.headers.get("content-type", "").startswith(
+                    "application/json"
+                ):
                     return response.json()
                 else:
                     return {"content": response.text}
-                    
+
             except httpx.HTTPStatusError as e:
-                if e.response.status_code < 500 or attempt == self.max_retries - 1:
+                if e.response.status_code < 500 or attempt == self.max_retries:
                     raise
-                await asyncio.sleep(self.retry_delay * (2 ** attempt))
-            except Exception as e:
-                if attempt == self.max_retries - 1:
+                await asyncio.sleep(self.retry_delay * (2**attempt))
+            except Exception:
+                if attempt == self.max_retries:
                     raise
-                await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                await asyncio.sleep(self.retry_delay * (2**attempt))
+        # This line is unreachable but makes mypy happy
+        raise RuntimeError("Request failed after multiple retries")

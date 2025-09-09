@@ -1,7 +1,8 @@
-from typing import Dict, List, Optional, Any
-import json
 import asyncio
+from typing import Dict, List
+
 from .base_tool import BaseTool
+
 
 class ExecutionTools(BaseTool):
     """Enhanced execution tools with advanced capabilities."""
@@ -13,38 +14,38 @@ class ExecutionTools(BaseTool):
                 "type": "function",
                 "function": {
                     "name": "execute_shell_command",
-                    "description": "Execute a shell command with advanced options and safety checks.",
+                    "description": "Execute a shell command w/ advanced options and safety checks.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "command": {
                                 "type": "string",
-                                "description": "The shell command to execute"
+                                "description": "The shell command to execute",
                             },
                             "timeout": {
                                 "type": "integer",
                                 "description": "Command timeout in seconds (default: 300)",
-                                "default": 300
+                                "default": 300,
                             },
                             "working_directory": {
                                 "type": "string",
                                 "description": "Working directory for command execution",
-                                "default": "."
+                                "default": ".",
                             },
                             "environment": {
                                 "type": "object",
                                 "description": "Environment variables to set",
-                                "default": {}
+                                "default": {},
                             },
                             "capture_output": {
                                 "type": "boolean",
                                 "description": "Whether to capture stdout/stderr",
-                                "default": True
-                            }
+                                "default": True,
+                            },
                         },
-                        "required": ["command"]
-                    }
-                }
+                        "required": ["command"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -56,27 +57,35 @@ class ExecutionTools(BaseTool):
                         "properties": {
                             "script_path": {
                                 "type": "string",
-                                "description": "Path to the script file"
+                                "description": "Path to the script file",
                             },
                             "interpreter": {
                                 "type": "string",
                                 "description": "Script interpreter (python, bash, node, etc.)",
-                                "enum": ["python", "python3", "bash", "sh", "node", "ruby", "perl"]
+                                "enum": [
+                                    "python",
+                                    "python3",
+                                    "bash",
+                                    "sh",
+                                    "node",
+                                    "ruby",
+                                    "perl",
+                                ],
                             },
                             "arguments": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Command line arguments for the script"
+                                "description": "Command line arguments for the script",
                             },
                             "timeout": {
                                 "type": "integer",
                                 "description": "Script timeout in seconds",
-                                "default": 300
-                            }
+                                "default": 300,
+                            },
                         },
-                        "required": ["script_path", "interpreter"]
-                    }
-                }
+                        "required": ["script_path", "interpreter"],
+                    },
+                },
             },
             {
                 "type": "function",
@@ -89,23 +98,23 @@ class ExecutionTools(BaseTool):
                             "commands": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "List of commands to execute in parallel"
+                                "description": "List of commands to execute in parallel",
                             },
                             "max_concurrent": {
                                 "type": "integer",
                                 "description": "Maximum number of concurrent executions",
-                                "default": 5
+                                "default": 5,
                             },
                             "timeout": {
                                 "type": "integer",
                                 "description": "Timeout for each command",
-                                "default": 300
-                            }
+                                "default": 300,
+                            },
                         },
-                        "required": ["commands"]
-                    }
-                }
-            }
+                        "required": ["commands"],
+                    },
+                },
+            },
         ]
 
     async def execute_shell_command(self, **kwargs) -> str:
@@ -115,15 +124,15 @@ class ExecutionTools(BaseTool):
             "timeout": kwargs.get("timeout", 300),
             "working_directory": kwargs.get("working_directory", "."),
             "environment": kwargs.get("environment", {}),
-            "capture_output": kwargs.get("capture_output", True)
+            "capture_output": kwargs.get("capture_output", True),
         }
 
         try:
             async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, options)
-                
+
                 return self._format_execution_result(result)
-                
+
         except Exception as e:
             return f"Execution failed: {str(e)}"
 
@@ -144,7 +153,7 @@ class ExecutionTools(BaseTool):
             async with self.agtsdbx_client as client:
                 result = await client.execute_command(command, options)
                 return self._format_execution_result(result)
-                
+
         except Exception as e:
             return f"Script execution failed: {str(e)}"
 
@@ -158,7 +167,7 @@ class ExecutionTools(BaseTool):
             return "No commands provided"
 
         semaphore = asyncio.Semaphore(max_concurrent)
-        
+
         async def execute_single(cmd):
             async with semaphore:
                 try:
@@ -169,15 +178,15 @@ class ExecutionTools(BaseTool):
 
         try:
             results = await asyncio.gather(*[execute_single(cmd) for cmd in commands])
-            
+
             formatted_results = []
             for i, result in enumerate(results):
                 formatted_results.append(f"Command {i+1}: {commands[i]}")
                 formatted_results.append(self._format_execution_result(result))
                 formatted_results.append("-" * 50)
-            
+
             return "\n".join(formatted_results)
-            
+
         except Exception as e:
             return f"Parallel execution failed: {str(e)}"
 
@@ -185,20 +194,20 @@ class ExecutionTools(BaseTool):
         """Format execution result for display."""
         if "error" in result:
             return f"Error: {result['error']}"
-            
+
         parts = []
-        
+
         if result.get("stdout"):
             parts.append(f"STDOUT:\n{result['stdout']}")
-            
+
         if result.get("stderr"):
             parts.append(f"STDERR:\n{result['stderr']}")
-            
+
         exit_code = result.get("exit_code", result.get("return_value", 0))
         parts.append(f"EXIT CODE: {exit_code}")
-        
+
         if "metadata" in result:
             duration = result["metadata"].get("duration", 0)
             parts.append(f"DURATION: {duration:.2f}s")
-        
+
         return "\n\n".join(parts)
